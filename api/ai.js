@@ -29,7 +29,7 @@ async function whoIs(token) {
 }
 
 // ---------- Google Gemini (free tier) ----------
-const GEMINI_MODELS = () => [process.env.GEMINI_MODEL, 'gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash'].filter((m, i, a) => m && a.indexOf(m) === i);
+const GEMINI_MODELS = () => [process.env.GEMINI_MODEL, 'gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-3.8-flash'].filter((m, i, a) => m && a.indexOf(m) === i);
 function geminiCode(status, msg) {
   if (status === 429) return 'quota';
   if (status === 400 && /API key not valid|API_KEY_INVALID/i.test(msg)) return 'bad_key';
@@ -54,8 +54,10 @@ async function gemini(res, key, msgs, stream) {
         method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': key }, body: payload, signal: ctrl.signal,
       });
     } catch (e) { clearTimeout(timer); return fail(res, 504, 'timeout', 'Gemini did not answer in time'); }
-    if (r.status !== 404) break;                     // model not available for this key: try the next one
+    // not available / busy / this model's free quota used up → try the next free model
+    if (![404, 429, 500, 503].includes(r.status)) break;
     lastMsg = ((await r.json().catch(() => ({}))).error || {}).message || '';
+    if (r.status !== 404) await new Promise(ok => setTimeout(ok, 600));
   }
   if (!r.ok) {
     clearTimeout(timer);
