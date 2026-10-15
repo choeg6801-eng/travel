@@ -1,0 +1,6 @@
+{
+  "name": "momentrip",
+  "private": true,
+  "description": "Personal AI travel curator: conditions → country → city → course",
+  "engines": { "node": ">=20" }
+}
