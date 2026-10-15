@@ -3,7 +3,7 @@
 시기·기간·비용·취향·여행 스타일로 **나라 3곳 → 도시 3곳 → 코스 3안 → 일자별 일정**을 추천해 주는 나만의 AI 여행 큐레이터.
 
 - 화면: `index.html` + `img/` + `icons/`, `manifest.webmanifest`, `sw.js`(앱 설치·오프라인)
-- AI: `api/ai.js` (Vercel 서버 함수, Anthropic API 키는 서버에만)
+- AI: `api/ai.js` (Vercel 서버 함수 · Google Gemini 무료 또는 Claude · 키는 서버에만)
 - 로그인·저장·사진: Supabase (프로젝트 `soundtrack-credit`에 `momentrip_` 테이블과 `momentrip-photos` 저장소로 이미 만들어 둠)
 
 휴대폰과 컴퓨터에서 **같은 이메일로 로그인하면 같은 여행·기록·사진**이 보여요.
@@ -24,8 +24,10 @@
 
    | 이름 | 값 |
    |---|---|
-   | `ANTHROPIC_API_KEY` | console.anthropic.com → API Keys에서 만든 `sk-ant-…` 키 |
+   | `GEMINI_API_KEY` | **무료** — aistudio.google.com → Get API key → Create API key 로 만든 키 (카드 필요 없음) |
    | `ALLOWED_EMAILS` | AI를 쓸 내 이메일 (여러 개면 쉼표로: `a@x.com,b@y.com`) |
+
+   Claude를 쓰고 싶으면 `GEMINI_API_KEY` 대신 `ANTHROPIC_API_KEY`(platform.claude.com, 유료 충전)를 넣으면 돼요. 둘 다 있으면 Gemini가 먼저 쓰이고, `AI_PROVIDER=claude`를 넣으면 Claude를 써요. Gemini 모델을 직접 고르려면 `GEMINI_MODEL`(예: `gemini-3.8-flash`)을 넣어요.
 
 4. **Deploy** → 끝나면 `https://momentrip-xxxx.vercel.app` 같은 주소가 나와요.
 
@@ -59,14 +61,15 @@ supabase.com → 프로젝트 **soundtrack-credit** → **Authentication → URL
 - **AI는 `ALLOWED_EMAILS`에 있는 계정만** 쓸 수 있어요. 다른 사람이 가입해도 AI 요금을 쓸 수 없고, 내 여행·기록·사진도 볼 수 없어요(행 단위 잠금).
 - Supabase 기본 메일 발송은 **시간당 몇 통**으로 제한돼요. 로그인 메일이 안 오면 조금 뒤 다시 받아요. 한 번 로그인하면 거의 다시 받을 일이 없어요.
 - Supabase 무료 프로젝트는 **일주일 넘게 아무도 안 쓰면 일시정지**돼요. 그땐 Supabase 대시보드에서 Restore를 누르면 돼요.
-- AI 모델은 앱의 **설정**에서 바꿀 수 있어요 (Sonnet 추천, Haiku는 빠르고 저렴, Opus는 가장 꼼꼼).
+- Gemini 무료 요금제는 분당·하루 사용량 한도가 있고, 보낸 내용이 Google의 서비스 개선에 쓰일 수 있어요. Claude 키를 쓸 때는 앱의 **설정**에서 모델을 바꿀 수 있어요.
 - **설정 → 전체 백업 받기**로 여행과 기록을 JSON 파일로 받아 둘 수 있어요.
 - API 키를 바꾸려면 Vercel → Project → Settings → Environment Variables에서 수정하고 **Redeploy**.
 
 ## 문제가 생기면
 | 증상 | 확인할 곳 |
 |---|---|
-| "AI 서버 설정이 끝나지 않았어요" | Vercel의 `ANTHROPIC_API_KEY` |
+| "AI 서버에 API 키가 없어요" | Vercel의 `GEMINI_API_KEY` 이름·값 확인 후 **Redeploy** |
+| "무료 AI 사용량을 다 썼거나…" | Gemini 무료 한도. 잠시 뒤나 다음 날 다시 |
 | "이 계정은 AI를 쓸 수 없어요" | Vercel의 `ALLOWED_EMAILS`에 로그인한 이메일이 있는지 |
 | 로그인 링크를 누르면 다른 사이트로 감 | Supabase Redirect URLs에 Vercel 주소가 있는지 |
 | "로그인 링크가 만료됐어요" | 링크는 한 번만, 1시간 안에 써야 해요. 새로 받기 |

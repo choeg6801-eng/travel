@@ -1092,8 +1092,14 @@ var ERR = {
   signed_out: '로그인이 만료됐어요. 다시 로그인해 주세요.',
   not_allowed: '이 이메일은 AI 사용이 허용되지 않았어요. 관리 설정(Vercel의 ALLOWED_EMAILS)에 이 이메일을 추가해 주세요.',
   server_config: 'AI 서버 설정이 끝나지 않았어요. 관리 설정(Vercel의 ANTHROPIC_API_KEY)을 확인해 주세요.',
+  quota: '오늘 쓸 수 있는 무료 AI 사용량을 다 썼거나, 너무 빠르게 보냈어요. 1분쯤 뒤에 다시 보내 주세요. 계속 이러면 내일 다시 시도해 주세요.',
+  region: 'AI 서버가 있는 지역에서 Gemini를 쓸 수 없어요. vercel.json의 regions를 바꿔야 해요.',
+  refusal: 'AI가 이 요청에 답하지 않았어요. 표현을 바꿔 다시 보내 주세요.',
+  no_key: 'AI 서버에 API 키가 없어요. Vercel → Settings → Environment Variables에 GEMINI_API_KEY(무료)를 넣고, Deployments에서 Redeploy해 주세요.',
+  bad_key: 'AI 서비스가 API 키를 거절했어요(키가 틀렸거나 삭제됨). 키를 다시 확인해 Vercel 값을 바꾼 뒤 Redeploy해 주세요.',
+  key_forbidden: '이 API 키로는 요청할 권한이 없어요. 키를 만든 곳(Google AI Studio 또는 Claude Console)에서 키 상태를 확인해 주세요.',
   bad_model: '선택한 모델을 쓸 수 없어요. 설정에서 다른 모델을 골라 주세요.',
-  no_credit: 'Anthropic API 크레딧이 부족해요. console.anthropic.com에서 결제 상태를 확인해 주세요.',
+  no_credit: 'Anthropic API 크레딧이 부족해요. console.anthropic.com → Billing에서 크레딧을 충전해 주세요.',
   overloaded: 'Claude가 지금 붐벼요. 잠시 뒤에 다시 보내 주세요.',
   timeout: '답이 너무 오래 걸렸어요. 한 번 더 보내 주세요.',
   too_long: '답이 너무 길어서 잘렸어요. 기간을 줄이거나 한 번 더 보내 주세요.',
@@ -1125,6 +1131,7 @@ function aiJson(input, signal, onText, retried){
         if (z < 0) throw { code: 'network' };
         if (tail.indexOf('ERR:') === 0) throw { code: tail.slice(4) || 'upstream_error' };
         if (tail === 'END:max_tokens') throw { code: 'too_long' };
+        if (tail === 'END:refusal') throw { code: 'refusal' };
         return parseJsonLoose(text.slice(0, z));
       }
       text += dec.decode(x.value, { stream: true });
@@ -1135,9 +1142,11 @@ function aiJson(input, signal, onText, retried){
   }).catch(function(err){ throw (err && err.name === 'AbortError') ? { code: 'cancelled' } : (err && err.code) ? err : { code: 'network' }; });
 }
 function refreshAI(){
-  var on = !!profile;
-  $('aiDot2').className = 'dot' + (on ? ' ok' : ' no');
-  $('aiStatus2').textContent = on ? '서버를 통해 Claude에 연결 · 키는 서버에만 있어요' : '로그인하면 AI를 쓸 수 있어요';
+  var on = !!profile, prov = CONF && CONF.ai;
+  $('aiDot2').className = 'dot' + (on && prov !== 'none' ? ' ok' : ' no');
+  $('aiStatus2').textContent = !on ? '로그인하면 AI를 쓸 수 있어요' : prov === 'gemini' ? 'Google Gemini(무료)에 연결 · 키는 서버에만 있어요' : prov === 'claude' ? '서버를 통해 Claude에 연결 · 키는 서버에만 있어요' : prov === 'none' ? 'AI 키가 아직 없어요 · Vercel에 GEMINI_API_KEY를 넣어 주세요' : 'AI 연결을 확인하는 중…';
+  $('apiModel2').closest('.field').hidden = prov === 'gemini';
+  if (!CONF) conf().then(refreshAI).catch(function(){});
   $('apiModel2').value = cfg.model;
   $('aiNotice').hidden = true;
 }

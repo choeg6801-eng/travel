@@ -28,12 +28,81 @@ async function whoIs(token) {
   return email;
 }
 
+// ---------- Google Gemini (free tier) ----------
+const GEMINI_MODELS = () => [process.env.GEMINI_MODEL, 'gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash'].filter((m, i, a) => m && a.indexOf(m) === i);
+function geminiCode(status, msg) {
+  if (status === 429) return 'quota';
+  if (status === 400 && /API key not valid|API_KEY_INVALID/i.test(msg)) return 'bad_key';
+  if (status === 401 || status === 403) return 'key_forbidden';
+  if (status === 400 && /location is not supported/i.test(msg)) return 'region';
+  if (status === 503 || status === 500) return 'overloaded';
+  return 'upstream_error';
+}
+async function gemini(res, key, msgs, stream) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 285000);
+  res.on('close', () => { if (!res.writableEnded) ctrl.abort(); });
+  const payload = JSON.stringify({
+    contents: msgs.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
+    generationConfig: { maxOutputTokens: 30000, responseMimeType: 'application/json' },
+  });
+  let r, model, lastMsg = '';
+  for (const m of GEMINI_MODELS()) {
+    model = m;
+    try {
+      r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(m) + ':' + (stream ? 'streamGenerateContent?alt=sse' : 'generateContent'), {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': key }, body: payload, signal: ctrl.signal,
+      });
+    } catch (e) { clearTimeout(timer); return fail(res, 504, 'timeout', 'Gemini did not answer in time'); }
+    if (r.status !== 404) break;                     // model not available for this key: try the next one
+    lastMsg = ((await r.json().catch(() => ({}))).error || {}).message || '';
+  }
+  if (!r.ok) {
+    clearTimeout(timer);
+    const j = await r.json().catch(() => ({}));
+    const msg = (j && j.error && j.error.message) || lastMsg;
+    return fail(res, r.status === 429 ? 429 : 502, r.status === 404 ? 'bad_model' : geminiCode(r.status, msg), msg);
+  }
+  const textOf = j => ((((j.candidates || [])[0] || {}).content || {}).parts || []).filter(p => !p.thought && typeof p.text === 'string').map(p => p.text).join('');
+  const stopOf = j => (((j.candidates || [])[0] || {}).finishReason) || '';
+  const stopCode = f => f === 'MAX_TOKENS' ? 'max_tokens' : /SAFETY|PROHIBITED|BLOCKLIST|RECITATION/.test(f) ? 'refusal' : f ? 'end_turn' : '';
+  if (!stream) {
+    const j = await r.json().catch(() => ({}));
+    clearTimeout(timer);
+    return res.status(200).json({ text: textOf(j), stop_reason: stopCode(stopOf(j)), model });
+  }
+  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'x-accel-buffering': 'no' });
+  const reader = r.body.getReader(); const dec = new TextDecoder();
+  let buf = '', stop = '', failed = '';
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
+        if (!line.startsWith('data:')) continue;
+        let j; try { j = JSON.parse(line.slice(5)); } catch (e) { continue; }
+        if (j.error) { failed = geminiCode(j.error.code || 500, j.error.message || ''); break; }
+        const t = textOf(j); if (t) res.write(t);
+        const f = stopOf(j); if (f) stop = stopCode(f);
+      }
+      if (failed) break;
+    }
+  } catch (e) { failed = ctrl.signal.aborted ? 'timeout' : 'upstream_error'; }
+  clearTimeout(timer);
+  if (!res.writableEnded) { res.write(failed ? '\u0000ERR:' + failed : '\u0000END:' + stop); res.end(); }
+}
+
 module.exports = async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') return fail(res, 405, 'method', 'POST only');
 
+  const geminiKey = process.env.GEMINI_API_KEY;
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return fail(res, 500, 'server_config', 'ANTHROPIC_API_KEY is not set');
+  const useGemini = !!geminiKey && (process.env.AI_PROVIDER || '').toLowerCase() !== 'claude' || (!!geminiKey && !apiKey);
+  if (!geminiKey && !apiKey) return fail(res, 500, 'no_key', 'Set GEMINI_API_KEY (free) or ANTHROPIC_API_KEY in Vercel and redeploy');
 
   const auth = String(req.headers.authorization || '');
   const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
@@ -61,6 +130,7 @@ module.exports = async (req, res) => {
   const model = MODELS.includes(body.model) ? body.model : (process.env.DEFAULT_MODEL || MODELS[0]);
 
   const stream = !!(body && body.stream);
+  if (useGemini) return gemini(res, geminiKey, msgs, stream);
   // stop paying for an answer nobody is waiting for
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 285000);
@@ -82,7 +152,7 @@ module.exports = async (req, res) => {
     clearTimeout(timer);
     const j = await r.json().catch(() => ({}));
     const msg = (j && j.error && j.error.message) || '';
-    const code = r.status === 401 || r.status === 403 ? 'server_config'
+    const code = r.status === 401 ? 'bad_key' : r.status === 403 ? 'key_forbidden'
       : r.status === 404 ? 'bad_model'
       : r.status === 429 ? 'rate_limited'
       : r.status === 529 ? 'overloaded'
