@@ -11,6 +11,8 @@ function fail(res, status, code, message) {
   res.status(status).json({ error: { code, message } });
 }
 function remember(key, body) {
+  const n = body && (Array.isArray(body.list) ? body.list.length : Array.isArray(body.items) ? body.items.length : Array.isArray(body.periods) ? body.periods.length : 1);
+  if (!n) return body; // empty = maybe a failure: ask again next time
   if (cache.size > 3000) cache.clear();
   cache.set(key, { at: Date.now(), body });
   return body;
@@ -94,7 +96,7 @@ function gCat(t) {
 }
 async function googlePool(key, city, ll, kws) {
   const qs = [city + ' 맛집', city + ' 현지 맛집', city + ' 카페', city + ' 가볼만한 곳'].concat(kws.filter(k => !/맛집|카페/.test(k)).slice(0, 2).map(k => city + ' ' + k + ' 맛집'));
-  const mask = 'places.id,places.displayName,places.location,places.businessStatus,places.googleMapsUri,places.primaryType,places.rating,places.userRatingCount,places.priceLevel';
+  const mask = 'places.id,places.displayName,places.location,places.businessStatus,places.googleMapsUri,places.primaryType,places.rating,places.userRatingCount,places.priceLevel,places.priceRange';
   const runs = await Promise.all(qs.map(q => fetch('https://places.googleapis.com/v1/places:searchText', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': mask },
@@ -116,7 +118,7 @@ async function googlePool(key, city, ll, kws) {
     if (prev) { prev.sc += 1; return; }
     const cnt = n >= 10000 ? (n / 10000).toFixed(1) + '만' : n >= 1000 ? (n / 1000).toFixed(1) + '천' : String(n);
     const rating = rt ? '★' + rt.toFixed(1) + ' (' + cnt + ')' : '';
-    seen.set(p.id, { gid: p.id, name: (p.displayName || {}).text || '', ko: '', cat: gCat(p.primaryType), sub: String(p.primaryType || '').replace(/_/g, ' '), d, lat: p.location.latitude, lon: p.location.longitude, u: p.googleMapsUri || '', src: 'google', sc, rating: rating ? 'Google ' + rating : '', info: [rating, PRICE[p.priceLevel] || ''].filter(Boolean).join(' · ') });
+    seen.set(p.id, { gid: p.id, name: (p.displayName || {}).text || '', ko: '', cat: gCat(p.primaryType), sub: String(p.primaryType || '').replace(/_/g, ' '), d, lat: p.location.latitude, lon: p.location.longitude, u: p.googleMapsUri || '', src: 'google', sc, rating: rating ? 'Google ' + rating : '', gprice: p.priceRange && p.priceRange.startPrice ? { cur: p.priceRange.startPrice.currencyCode, lo: +p.priceRange.startPrice.units || 0, hi: +((p.priceRange.endPrice || {}).units || 0) } : null, plevel: PRICE[p.priceLevel] || '', info: [rating, PRICE[p.priceLevel] || ''].filter(Boolean).join(' · ') });
   }));
   return { src: 'google', list: [...seen.values()].filter(x => x.name), low };
 }
@@ -172,7 +174,7 @@ async function kakaoStays(key, city, ll, types) {
   });
 }
 async function googleStays(key, city, ll, types) {
-  const mask = 'places.id,places.displayName,places.location,places.businessStatus,places.googleMapsUri,places.primaryType,places.rating,places.userRatingCount,places.priceLevel';
+  const mask = 'places.id,places.displayName,places.location,places.businessStatus,places.googleMapsUri,places.primaryType,places.rating,places.userRatingCount,places.priceLevel,places.priceRange';
   const qs = [city + ' 숙소'].concat(types.slice(0, 2).map(t => city + ' ' + t));
   const runs = await Promise.all(qs.map(q => fetch('https://places.googleapis.com/v1/places:searchText', {
     method: 'POST', headers: { 'content-type': 'application/json', 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': mask },
@@ -187,6 +189,7 @@ async function googleStays(key, city, ll, types) {
     const t = String(p.primaryType || '');
     const cat = /hostel/.test(t) ? '호스텔' : /guest_house|bed_and_breakfast/.test(t) ? '게스트하우스' : /resort/.test(t) ? '리조트' : /motel/.test(t) ? '모텔' : /apartment|cottage|private_guest_room/.test(t) ? '아파트형' : '호텔';
     seen.set(p.id, { name: (p.displayName || {}).text || '', ko: '', cat, sub: t.replace(/_/g, ' '), lat: p.location.latitude, lon: p.location.longitude, u: p.googleMapsUri || '', src: 'google', sc: 1 - i / 25,
+      gprice: p.priceRange && p.priceRange.startPrice ? { cur: p.priceRange.startPrice.currencyCode, lo: +p.priceRange.startPrice.units || 0, hi: +((p.priceRange.endPrice || {}).units || p.priceRange.startPrice.units) || 0 } : null,
       info: [rt ? '★' + rt.toFixed(1) + ' (' + cnt + ')' : '', PRICE[p.priceLevel] || ''].filter(Boolean).join(' · ') });
   }));
   return [...seen.values()].filter(x => x.name);
@@ -243,6 +246,22 @@ async function travelAlerts(key) {
   return map;
 }
 
+// Canadian government travel advice (open data, no key): fallback when MOFA isn't available
+let CA = null;
+async function canadaAlerts() {
+  if (CA && Date.now() - CA.at < DAY / 2) return CA.map;
+  const r = await fetch('https://data.international.gc.ca/travel-voyage/index-alpha-eng.json');
+  const j = await r.json();
+  const data = (j && j.data) || {}, map = {};
+  Object.keys(data).forEach(k => {
+    const o = data[k] || {}, cc = String(o['country-iso'] || k || '').toUpperCase(); if (!/^[A-Z]{2}$/.test(cc)) return;
+    const st = parseInt(o['advisory-state'], 10); if (!isFinite(st)) return;
+    map[cc] = { lvl: st >= 3 ? 4 : st === 2 ? 3 : st === 1 ? 1 : 0, region: +o['has-regional-advisory'] ? '일부 지역 주의 권고' : '', src: 'ca' };
+  });
+  if (Object.keys(map).length) CA = { at: Date.now(), map };
+  return map;
+}
+
 module.exports = async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'GET') return fail(res, 405, 'method', 'GET only');
@@ -261,6 +280,14 @@ module.exports = async (req, res) => {
   const lat = parseFloat(q.lat), lon = parseFloat(q.lon);
   const ll = isFinite(lat) && isFinite(lon) ? [lat, lon] : null;
   try {
+    if (q.diag) {
+      // is each map key actually working? (Settings → 지도 키 상태 확인)
+      const out = {};
+      if (kKey) { try { const r = await kakao('keyword', { query: '서울역', size: 1 }, kKey); out.kakao = r.length ? 'ok' : 'empty'; } catch (e) { out.kakao = e.code === 'bad_key' ? 'denied' : 'error'; } } else out.kakao = 'none';
+      if (gKey) { try { const r = await google(gKey, 'Seoul Station', null, 1); out.google = r.items.length ? 'ok' : 'empty'; } catch (e) { out.google = e.code === 'bad_key' ? 'denied' : 'error'; } } else out.google = 'none';
+      out.tour = tKey ? 'set' : 'none';
+      return res.status(200).json(out);
+    }
     if (q.hours) {
       if (!gKey) return fail(res, 501, 'no_key', 'GOOGLE_PLACES_API_KEY is not set');
       const id = String(q.id || ''); if (!/^[A-Za-z0-9_-]{10,}$/.test(id)) return fail(res, 400, 'bad_request', 'id required');
@@ -269,10 +296,10 @@ module.exports = async (req, res) => {
       return res.status(200).json(remember(ck, await googleHours(gKey, id)));
     }
     if (q.alert) {
-      if (!tKey) return fail(res, 501, 'no_key', 'TOURAPI_KEY is not set');
       const cc = String(q.cc || '').toUpperCase(); if (!/^[A-Z]{2}$/.test(cc)) return fail(res, 400, 'bad_request', 'cc required');
-      const map = await travelAlerts(tKey);
-      return res.status(200).json(map[cc] || { lvl: 0 });
+      if (tKey) { try { const map = await travelAlerts(tKey); if (map[cc]) return res.status(200).json(Object.assign({ src: 'mofa' }, map[cc])); if (Object.keys(map).length > 50) return res.status(200).json({ lvl: 0, src: 'mofa' }); } catch (e) { /* fall through */ } }
+      const ca = await canadaAlerts();
+      return res.status(200).json(ca[cc] || (Object.keys(ca).length ? { lvl: 0, src: 'ca' } : {}));
     }
     const isoOk = d => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''));
     if (q.fest || q.tm) {
@@ -306,9 +333,9 @@ module.exports = async (req, res) => {
       const city = String(q.city || '').trim().slice(0, 40);
       if (!city || !ll) return fail(res, 400, 'bad_request', 'city, lat, lon required');
       const kws = String(q.kw || '').split(',').map(s => s.trim()).filter(s => s.length >= 2).slice(0, 3);
-      const ck = 'gpool|' + city + '|' + kws.join(',');
+      const ck = 'gpool|' + city + '|' + ll[0].toFixed(1) + ',' + ll[1].toFixed(1) + '|' + kws.join(',');
       const hit = cache.get(ck);
-      if (hit && Date.now() - hit.at < 7 * DAY) return res.status(200).json(hit.body);
+      if (hit && Date.now() - hit.at < 2 * DAY) return res.status(200).json(hit.body);
       return res.status(200).json(remember(ck, await googlePool(gKey, city, ll, kws)));
     }
     if (q.pool) {
@@ -316,7 +343,7 @@ module.exports = async (req, res) => {
       const city = String(q.city || '').trim().slice(0, 40);
       if (!city || !ll) return fail(res, 400, 'bad_request', 'city, lat, lon required');
       const kws = String(q.kw || '').split(',').map(s => s.trim()).filter(s => s.length >= 2).slice(0, 3);
-      const ck = 'pool|' + city + '|' + kws.join(',');
+      const ck = 'pool|' + city + '|' + ll[0].toFixed(1) + ',' + ll[1].toFixed(1) + '|' + kws.join(',');
       const hit = cache.get(ck);
       if (hit && Date.now() - hit.at < DAY) return res.status(200).json(hit.body);
       return res.status(200).json(remember(ck, await kakaoPool(kKey, city, ll, kws)));
@@ -329,8 +356,12 @@ module.exports = async (req, res) => {
     const hit = cache.get(ck);
     if (hit && Date.now() - hit.at < DAY) return res.status(200).json(hit.body);
     let body;
-    if (useKakao) body = { src: 'kakao', items: (await kakao('keyword', Object.assign({ query: text, size }, ll ? { x: ll[1], y: ll[0] } : {}), kKey)).map(kItem) };
-    else body = await google(gKey, text, ll, size);
+    if (useKakao) {
+      // Kakao first for Korea; if Kakao is refused (e.g. 카카오맵 사용 설정 OFF) or finds nothing, ask Google
+      try { body = { src: 'kakao', items: (await kakao('keyword', Object.assign({ query: text, size }, ll ? { x: ll[1], y: ll[0] } : {}), kKey)).map(kItem) }; }
+      catch (e) { if (!gKey) throw e; console.warn('kakao failed, using google:', e.message); body = null; }
+      if ((!body || !body.items.length) && gKey) body = await google(gKey, text, ll, size);
+    } else body = await google(gKey, text, ll, size);
     res.status(200).json(remember(ck, body));
   } catch (e) {
     if (e.code === 'bad_key') return fail(res, 502, 'bad_key', 'The map key was rejected');

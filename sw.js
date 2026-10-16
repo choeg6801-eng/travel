@@ -1,6 +1,6 @@
 // Momentrip offline support: the app shell and pictures are cached so a saved trip still opens
 // without data. API and Supabase calls always go to the network.
-const V = 'momentrip-04eb1b0eed';
+const V = 'momentrip-3e31ace40a';
 const CORE = ['/', '/manifest.webmanifest', '/icons/icon-192.png',
   '/img/beach.jpg', '/img/tropical.jpg', '/img/market.jpg', '/img/forest.jpg', '/img/art.jpg',
   '/img/mountain.jpg', '/img/oldtown.jpg', '/img/city.jpg', '/img/canyon.jpg', '/img/temple.jpg'];

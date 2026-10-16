@@ -13,6 +13,8 @@ module.exports = (req, res) => {
     placeGoogle: !!process.env.GOOGLE_PLACES_API_KEY,
     tour: !!process.env.TOURAPI_KEY,
     tm: !!process.env.TICKETMASTER_API_KEY,
+    serp: !!process.env.SERPAPI_KEY,
+    rail: !!(process.env.DATA_GO_KR_KEY || process.env.TOURAPI_KEY),
     ai: process.env.GEMINI_API_KEY && ((process.env.AI_PROVIDER || '').toLowerCase() !== 'claude' || !process.env.ANTHROPIC_API_KEY) ? 'gemini' : process.env.ANTHROPIC_API_KEY ? 'claude' : 'none',
   });
 };
