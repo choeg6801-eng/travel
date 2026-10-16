@@ -601,6 +601,18 @@ main.app{padding-block:28px 64px}
 .srcb{font-size:11px;font-weight:800;padding:2px 7px;border-radius:999px;background:var(--surface-2);color:var(--muted)}
 .xnote{font-size:12px;color:var(--muted);margin-top:10px}
 .xnote a{color:inherit}
+.daymap{height:260px;border-radius:16px;overflow:hidden;margin:4px 0 10px;border:1px solid var(--line);background:var(--surface-2)}
+.daymap[hidden]{display:none}
+.mpin{width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;font:800 12px/26px system-ui,sans-serif;text-align:center;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)}
+.mpin.food{background:#E0603C}.mpin.stay{background:#5B6B7F}
+.maplinks{grid-column:2/-1;display:flex;gap:6px;flex-wrap:wrap}
+.hrs{display:inline-flex;font-size:12px;font-weight:800;color:#9B1C12;background:#FBE3E1;border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:2px;white-space:nowrap}
+.facts .warn{color:#9B1C12;font-weight:700}
+.facts .okv{color:#1D6B3F;font-weight:700}
+.rt{display:inline-flex;font-size:12px;font-weight:800;color:#8A5A00;background:#FFF4D6;border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:2px;white-space:nowrap}
+.routeline{display:flex;gap:8px 12px;align-items:center;flex-wrap:wrap;font-size:13.5px;padding:10px 12px;border-radius:12px;background:var(--surface-2);margin-bottom:6px}
+.routeline a{color:var(--accent);font-weight:700}
+.routeline button{margin-left:auto}
 .vbadge.closed{background:#FBE3E1;color:#9B1C12;cursor:pointer}
 .vbadge.me{background:var(--surface-2);color:var(--muted);cursor:pointer}
 .vline{display:flex;gap:8px 12px;align-items:center;flex-wrap:wrap;font-size:13.5px;padding:10px 12px;border-radius:12px;background:var(--surface-2);margin-bottom:6px}
@@ -956,12 +968,13 @@ a.brand{text-decoration:none}
       <div class="tripgrid">
         <div class="card">
           <div class="tabs" role="tablist" aria-label="여행 일자" id="dayTabs"></div>
+          <div class="daymap" id="dayMap" hidden role="img" aria-label="오늘 일정 지도"></div>
           <div id="dayBody"></div>
           <form class="add" id="addForm">
             <label class="sr" for="addTime">시간</label><input id="addTime" type="time" value="12:00">
             <label class="sr" for="addName">장소 이름</label><input id="addName" class="name" type="text" placeholder="추가할 장소나 일정">
             <label class="sr" for="addType">종류</label>
-            <select id="addType"><option>명소</option><option>맛집</option><option>카페</option><option>체험</option><option>쇼핑</option><option>휴식</option><option>이동</option><option>숙소</option></select>
+            <select id="addType"><option>명소</option><option>맛집</option><option>카페</option><option>체험</option><option>쇼핑</option><option>바</option><option>휴식</option><option>이동</option><option>숙소</option></select>
             <button type="submit" class="secondary">추가</button>
           </form>
         </div>
@@ -1436,12 +1449,14 @@ conf().then(function(c){
     return placeApi('stay=1&city=' + encodeURIComponent(String(city).replace(/\s*\(.*\)$/, '')) + '&lat=' + ll[0].toFixed(4) + '&lon=' + ll[1].toFixed(4) + (dom ? '&dom=1' : '') + '&kw=' + encodeURIComponent(kw.join(',')));
   } : null;
   window.MT_FEST = c.tour ? function(ll, per){ return placeApi('fest=1&lat=' + ll[0].toFixed(4) + '&lon=' + ll[1].toFixed(4) + '&from=' + per.from + '&to=' + per.to); } : null;
+  window.MT_HOURS = c.placeGoogle ? function(id){ return placeApi('hours=1&id=' + encodeURIComponent(id)); } : null;
+  window.MT_ALERT = c.tour ? function(cc){ return placeApi('alert=1&cc=' + cc); } : null;
   window.MT_TM = c.tm ? function(ll, per){ return placeApi('tm=1&lat=' + ll[0].toFixed(4) + '&lon=' + ll[1].toFixed(4) + '&from=' + per.from + '&to=' + per.to); } : null;
 }).catch(function(){});
-window.MT_PLACE = function(q, ll, dom){
+window.MT_PLACE = function(q, ll, dom, size){
   return conf().then(function(c){
     if (!((dom && c.place === 'kakao') || c.placeGoogle)) throw { code: 'skip' };
-    return placeApi('q=' + encodeURIComponent(q) + (dom ? '&dom=1' : '') + (ll ? '&lat=' + ll[0].toFixed(4) + '&lon=' + ll[1].toFixed(4) : ''));
+    return placeApi('q=' + encodeURIComponent(q) + (dom ? '&dom=1' : '') + (size ? '&size=' + size : '') + (ll ? '&lat=' + ll[0].toFixed(4) + '&lon=' + ll[1].toFixed(4) : ''));
   });
 };
 window.MT_GPOOL = function(city, ll, kw){
@@ -1470,7 +1485,7 @@ $('phraseList').innerHTML = PHRASES.map(function(p, i){ return '<button type="bu
 
 // ---------- conditions ----------
 var CORE = [['when','시기','i-when'],['len','기간','i-len'],['budget','비용','i-budget'],['taste','취향','i-taste'],['style','여행 스타일','i-style']];
-var EXTRA = [['scope','여행 범위','i-pin'],['who','동행','i-who'],['place','희망 여행지','i-pin'],['from','출발지','i-pin'],['extra','기타 요청','i-check']];
+var EXTRA = [['scope','여행 범위','i-pin'],['who','동행','i-who'],['place','희망 여행지','i-pin'],['from','출발지','i-pin'],['wish','꼭 원하는 곳','i-check'],['extra','기타 요청','i-check']];
 var ALLC = CORE.concat(EXTRA);
 function condText(c){
   c = c || {};
@@ -1507,11 +1522,12 @@ $('restart').addEventListener('click', function(){ resetChat(); });
 function convoRules(){
   return '너는 "Momentrip"의 여행 큐레이터야. 사용자' + (profile ? '(' + profile.name + ')' : '') + '와 한국어로 대화하면서 여행 조건을 파악해. 오늘은 ' + todayStr() + '이야.\n' +
     '핵심 조건 5가지: when(시기), len(기간, 예: 3박 4일), budget(1인 예산, 항공·숙소 포함), taste(취향: 미식, 자연, 예술, 쇼핑, 휴양, 액티비티 등 하고 싶은 경험), style(여행 스타일: 느긋하게/알차게, 가성비/여유, 자유여행/투어 같은 여행 방식).\n' +
-    '보조 조건: scope(여행 범위: 어디든/국내/가까운 해외/장거리 해외 또는 "유럽", "일본"처럼 사용자가 말한 범위), who(동행: 혼자/연인과/친구와/부모님과/아이와/가족 모두 등, 인원이 있으면 함께), place(콕 집은 희망 여행지가 있으면), from(출발지, 말 안 하면 인천), extra(기타 요청·피하고 싶은 것).\n' +
+    '보조 조건: scope(여행 범위: 어디든/국내/가까운 해외/장거리 해외 또는 "유럽", "일본"처럼 사용자가 말한 범위), who(동행: 혼자/연인과/친구와/부모님과/아이와/가족 모두 등, 인원이 있으면 함께), place(콕 집은 희망 여행지가 있으면), from(출발지, 말 안 하면 인천), wish(꼭 가고 싶은 구체적인 장소·분위기·숙소 조건), extra(기타 요청·피하고 싶은 것).\n' +
+    '- 사용자가 "오션뷰 LP바", "루프탑 수영장 있는 숙소", "현지인만 가는 국숫집"처럼 구체적인 장소나 분위기를 말하면 절대 요약하거나 넓은 말로 바꾸지 말고 사용자가 쓴 표현 그대로 wish에 쉼표로 모아(이전 wish는 지우지 말고 더해). taste에는 미식·자연 같은 큰 범주만.\n' +
     '규칙:\n- 사용자가 한 번에 여러 정보를 말하면 모두 반영하고, 이미 아는 건 다시 묻지 마. 말투나 맥락에서 스타일을 추론할 수 있으면 채워.\n- 핵심 조건 중 빠진 게 있으면 한 번에 1~2개만 자연스럽게 물어봐. 모르겠다고 하면 무난한 기본값을 제안하고 채워.\n' +
     '- 사용자가 연차·휴가 일수를 말하거나 언제 가면 좋을지 물으면, 상태에 있는 연휴 후보에서 골라 날짜와 쉬는 일수를 제안하고 when·len을 채워.\n- 동행과 여행 범위를 아직 모르면 핵심 조건을 물을 때 한 번만 가볍게 같이 물어봐(답이 없으면 동행은 미정, 범위는 어디든으로 두고 넘어가). 국내 여행도 추천할 수 있어.\n- 핵심 조건 5가지가 모두 모였거나, 4가지 이상 모이고 사용자가 원하거나, 사용자가 바로 추천을 원하면 action "recommend".\n- 추천 목록이 있고 사용자가 그중 한 도시의 코스를 원하면 action "plan", planIndex(나라 순위, 0부터), cityIndex(그 나라 도시 순위, 0부터, 말 안 하면 0). 그러면 그 도시의 코스 3안을 보여 줘.\n- 코스 3안이 나와 있고 사용자가 그중 하나를 고르면 action "pick_course", courseIndex(0부터).\n- 사용자가 목록에 없는 특정 도시 하나를 정해 코스를 원하면 place를 채우고 action "plan_place".\n- 조건을 바꾸거나 다른 추천을 원하면 조건을 고치고 action "recommend".\n- 여행과 관계없는 말이면 짧게 답하고 여행 이야기로 돌아와.\n' +
     '- reply는 2~3문장으로 따뜻하고 간결하게. 추천 결과를 reply에 나열하지 마(화면에 카드로 보여 줘).\n- suggestions에는 사용자가 다음에 누를 만한 짧은 답 2~4개(지금 묻는 질문에 대한 답 위주).\n' +
-    'JSON 하나로만 답해: {"reply":"...","conditions":{"when":"","len":"","budget":"","taste":"","style":"","scope":"","who":"","place":"","from":"","extra":""},"action":"ask","planIndex":0,"cityIndex":0,"courseIndex":0,"suggestions":["..."]}\n' +
+    'JSON 하나로만 답해: {"reply":"...","conditions":{"when":"","len":"","budget":"","taste":"","style":"","scope":"","who":"","place":"","from":"","wish":"","extra":""},"action":"ask","planIndex":0,"cityIndex":0,"courseIndex":0,"suggestions":["..."]}\n' +
     'action은 ask, recommend, plan, pick_course, plan_place 중 하나. conditions에는 지금까지 파악한 값을 모두 담아(모르면 빈 문자열).';
 }
 function send(text){
@@ -1529,7 +1545,9 @@ function converse(){
   if (turns[turns.length - 1].role !== 'user') turns.push({ role: 'user', content: '(계속)' });
   run('talk', function(signal){ return aiJson(turns, signal, streamTo('talk')); }, function(data){
     var c = (data && data.conditions) || {};
-    ALLC.forEach(function(l){ var v = c[l[0]]; if (typeof v === 'string' && v.trim()) C.cond[l[0]] = v.trim(); });
+    ALLC.forEach(function(l){ var v = c[l[0]]; if (typeof v === 'string' && v.trim()) C.cond[l[0]] = l[0] === 'wish' ? mergeWish(C.cond.wish, v) : v.trim(); });
+    var lastMe = ''; for (var qi = C.msgs.length - 1; qi >= 0; qi--) if (C.msgs[qi].who === 'me') { lastMe = C.msgs[qi].text; break; }
+    var got = wishFromText(lastMe); if (got.length) C.cond.wish = mergeWish(C.cond.wish, got.join(', '));
     if (data && data.reply) C.msgs.push({ who: 'bot', text: String(data.reply) });
     C.suggestions = (data && Array.isArray(data.suggestions) ? data.suggestions : []).slice(0, 4).map(String);
     var act = data && data.action;
@@ -1556,7 +1574,7 @@ function recommend(){
     (prev.length ? '\n- 이미 추천한 곳(조건이 바뀌지 않았다면 다른 곳으로): ' + prev.join(', ') : '') +
     (tt ? '\n\n이 여행자의 여행 취향 프로필(본인이 확인한 내용):\n' + tt + '\n취향 프로필을 핵심 조건만큼 중요하게 반영하고, why에 프로필과 이어지는 점을 짧게 언급해.' : '') +
     (ls ? '\n\n이 여행자가 다녀온 여행 기록:\n' + ls + '\n기록에서 취향을 읽어 반영해: 만족도가 높았던 여행의 좋았던 점과 비슷한 매력이 있는 곳을 높게 치고, 아쉬웠던 점은 피하고, 이미 다녀온 도시는 사용자가 원하지 않는 한 빼(다녀온 나라의 새 도시는 괜찮아). 기록과 이어지는 이유가 있으면 why에 짧게 언급해(예: 지난번 타이난 야시장이 좋았다면).' : '') +
-    '\n\n핵심 조건 5가지(시기, 기간, 비용, 취향, 여행 스타일)를 모두 따져서 가장 잘 맞는 나라(국내면 지역) 3곳을 우선순위대로 추천하고, 각 나라 안에서 조건에 맞는 도시 3곳을 일치 순서대로 골라. 희망 여행지가 있으면 그곳을 포함해.\n' + scopeRule(c.scope) + '\n' +
+    '\n\n핵심 조건 5가지(시기, 기간, 비용, 취향, 여행 스타일)를 모두 따져서 가장 잘 맞는 나라(국내면 지역) 3곳을 우선순위대로 추천하고, 각 나라 안에서 조건에 맞는 도시 3곳을 일치 순서대로 골라. 희망 여행지가 있으면 그곳을 포함해. 꼭 원하는 곳(wish)이 있으면 그런 장소가 실제로 있는 도시를 우선하고(예: 오션뷰 바는 해안 도시), why에 그 점을 적어.\n' + scopeRule(c.scope) + '\n' +
     '동행은 숙소 형태, 이동 거리, 일정 강도에 반영해(부모님·아이와면 이동이 적고 편한 곳, 혼자면 치안과 혼자 다니기 좋은지, 연인이면 분위기). why에 동행 이야기도 자연스럽게 담아.\n' +
     '시기는 날씨·우기/건기·성수기·축제를, 기간은 이동시간(비행·교통) 대비 체류 효율을, 비용은 항공·숙소·현지 경비 합계가 예산 안인지를, 취향은 하고 싶은 경험이 풍부한지를, 여행 스타일은 여행 방식(속도·가성비·자유/투어)에 맞는지를 봐. 정보가 미정인 조건은 무난하게 가정해.\n' +
     '실제로 있는 곳만 쓰고, 확실하지 않은 사실은 쓰지 마. 모든 글은 자연스러운 한국어로 짧게.\n\n' +
@@ -1588,11 +1606,11 @@ function itinPrompt(place, rec, nights, course, pool, ev){
     (course ? '\n\n사용자가 고른 코스: "' + course.title + '" - ' + course.concept + (course.pace ? ' (' + course.pace + ')' : '') + '\n날짜별 테마: ' + course.outline.map(function(t, i){ return (i + 1) + '일차 ' + t; }).join(' / ') + '\n이 콘셉트와 날짜별 테마를 그대로 따라서 짜.' : '') +
     (isDom(rec) || isDomScope(C.cond.scope) ? '\n국내 여행이야. 첫날은 출발지에서의 이동(KTX·버스·자차 등)을, 마지막 날은 귀가 이동을 고려하고, meta.airport는 빈 문자열, meta.flight에는 교통편과 시간, meta.budget.flight에는 왕복 교통비, meta.domestic은 true, meta.country는 "국내 · 지역"으로.' : '') +
     (tasteText() ? '\n\n여행자의 취향 프로필:\n' + tasteText() : '') + poolText(pool, 'plan') + evText(ev) + '\n\n일자별 코스를 짜 줘. 동행에 맞춰 숙소와 일정 강도를 정하고(부모님·아이와면 이동 적게, 쉬는 시간 넉넉히), 취향을 중심 경험으로 두고, 여행 스타일에 맞춰 하루 일정 수와 속도를 정해(느긋하면 하루 3곳, 알차면 4~5곳). 첫날은 도착을, 마지막 날은 공항 이동을 고려하고, 가까운 곳끼리 묶어 이동을 줄여. 실제로 있는 구체적인 장소·식당 이름을 쓰고 현지 표기나 영어를 괄호로 함께 적어. 식당·카페는 지도 앱에 나오는, 오래 운영돼 온 잘 알려진 곳 위주로 골라. 존재가 확실하지 않은 곳은 지어내지 말고 "현지 야시장"처럼 일반적으로 써. 각 일정의 q에는 지도 검색에 그대로 넣을 공식 이름을 적어(' + (isDom(rec) || isDomScope(C.cond.scope) ? '국내라 한글 상호' : '영어 공식 이름, 없으면 현지어') + '). 이동·숙소·휴식처럼 특정 장소가 아니면 q는 빈 문자열. 가격은 쓰지 마. 모든 글은 자연스러운 한국어로 짧게.\n\n' +
-    'JSON 하나로만 답해: {"title":"짧은 여행 제목","summary":"코스 흐름 2문장","meta":{"city":"도시(한글)","country":"나라","airport":"IATA 3글자","lat":0,"lon":0,"currency":"ISO 통화 코드","photo":"' + PHOTO_KEYS.join('|') + ' 중 하나","flight":"비행 정보 짧게","season":"그 시기 날씨 한 문장","fit":{"when":90,"len":90,"budget":90,"taste":90,"style":90},"budget":{"flight":40,"stay":30,"local":25,"total":95}},"days":[{"title":"그날 테마","items":[{"time":"10:00","pid":"후보 번호(P12) 또는 빈 문자열","name":"장소 (현지 표기)","q":"지도 검색용 공식 이름","type":"명소","why":"내 조건과 맞는 이유 15자 안팎","note":"한 줄 팁"}]}],"tips":["준비 팁 4개 이하"]' + (ev && ev.list && ev.list.length ? ',"events":[{"e":"E1","name":"한국어 이름","note":"한 줄 설명"}]' : '') + '}\n' +
-    'days 배열은 정확히 ' + days + '개. type은 명소, 맛집, 카페, 체험, 쇼핑, 휴식, 이동, 숙소 중 하나. budget은 1인 기준 만원 단위 정수 추정.';
+    'JSON 하나로만 답해: {"title":"짧은 여행 제목","summary":"코스 흐름 2문장","meta":{"city":"도시(한글)","country":"나라","airport":"IATA 3글자","lat":0,"lon":0,"currency":"ISO 통화 코드","photo":"' + PHOTO_KEYS.join('|') + ' 중 하나","flight":"비행 정보 짧게","season":"그 시기 날씨 한 문장","fit":{"when":90,"len":90,"budget":90,"taste":90,"style":90},"budget":{"flight":40,"stay":30,"local":25,"total":95}},"days":[{"title":"그날 테마","items":[{"time":"10:00","pid":"후보 번호(P12) 또는 빈 문자열","name":"장소 (현지 표기)","q":"지도 검색용 공식 이름","type":"명소","wish":"꼭 원하는 것 번호 또는 빈 문자열","why":"내 조건과 맞는 이유 15자 안팎","note":"한 줄 팁"}]}],"tips":["준비 팁 4개 이하"]' + (ev && ev.list && ev.list.length ? ',"events":[{"e":"E1","name":"한국어 이름","note":"한 줄 설명"}]' : '') + '}\n' +
+    'days 배열은 정확히 ' + days + '개. type은 명소, 맛집, 카페, 바, 체험, 쇼핑, 휴식, 이동, 숙소 중 하나. budget은 1인 기준 만원 단위 정수 추정.';
 }
 function normalizeDays(days, want){
-  var out = arr(days).slice(0, Math.max(want, 1)).map(function(d){ return { title: String((d && d.title) || ''), items: arr(d && d.items).filter(function(it){ return typeof it === 'object'; }).slice(0, 8).map(function(it){ var o = { time: String(it.time || '').slice(0, 5), name: String(it.name || '일정'), type: String(it.type || '명소'), note: String(it.note || ''), done: !!it.done }; if (it.q) o.q = String(it.q).slice(0, 80); if (it.ev) o.ev = 1; if (it.pid) o.pid = String(it.pid).slice(0, 8); if (it.why) o.why = String(it.why).slice(0, 60); var v = cleanV(it.v); if (v) o.v = v; return o; }) }; });
+  var out = arr(days).slice(0, Math.max(want, 1)).map(function(d){ return { title: String((d && d.title) || ''), items: arr(d && d.items).filter(function(it){ return typeof it === 'object'; }).slice(0, 8).map(function(it){ var o = { time: String(it.time || '').slice(0, 5), name: String(it.name || '일정'), type: String(it.type || '명소'), note: String(it.note || ''), done: !!it.done }; if (it.q) o.q = String(it.q).slice(0, 80); if (it.ev) o.ev = 1; if (it.pid) o.pid = String(it.pid).slice(0, 8); if (it.why) o.why = String(it.why).slice(0, 60); if (it.wish && num(it.wish) > 0) o.wish = num(it.wish); if (it.rt) o.rt = String(it.rt).slice(0, 24); if (it.hrs && typeof it.hrs === 'object') o.hrs = { k: String(it.hrs.k || ''), ok: !!it.hrs.ok, closed: !!it.hrs.closed, txt: String(it.hrs.txt || '').slice(0, 40) }; if (Array.isArray(it.ll) && isFinite(it.ll[0]) && isFinite(it.ll[1])) o.ll = [+it.ll[0], +it.ll[1]]; if (it.wev && typeof it.wev === 'object') o.wev = { full: !!it.wev.full, text: String(it.wev.text || '').slice(0, 120) }; var v = cleanV(it.v); if (v) o.v = v; return o; }) }; });
   while (out.length < want) out.push({ title: '자유 일정', items: [] });
   return out;
 }
@@ -1600,7 +1618,7 @@ function lastCourses(){ for (var i = C.msgs.length - 1; i >= 0; i--) if (C.msgs[
 function courseOptions(place, rec){
   var nights = parseNights(C.cond.len), days = nights + 1;
   var prompt = '너는 한국인 여행자를 위한 여행 큐레이터야. 오늘은 ' + todayStr() + '이야.\n\n여행지: ' + place + (rec && rec.country ? ', ' + rec.country : '') + '\n기간: ' + nights + '박 ' + days + '일\n여행자 조건:\n' + condText(C.cond) +
-    (tasteText() ? '\n\n여행자의 취향 프로필:\n' + tasteText() : '') + (logSummary(6) ? '\n\n참고할 지난 여행 기록(좋았던 점은 살리고 아쉬웠던 점은 피해):\n' + logSummary(6) : '') + '\n\n이 도시에서 여행자 조건에 맞는 여행 코스 3안을 서로 확실히 다른 콘셉트로 만들어 조건 일치 순서대로 줘. 콘셉트는 조건에 맞게 정해(예: 취향에 집중, 여유롭게 쉬기, 근교까지 넓게). 세 안 모두 취향·여행 스타일·동행·예산을 지키되 강조점이 달라야 해. 실제로 있는 장소만 쓰고, 모든 글은 자연스러운 한국어로 짧게.\n\n' +
+    (tasteText() ? '\n\n여행자의 취향 프로필:\n' + tasteText() : '') + (logSummary(6) ? '\n\n참고할 지난 여행 기록(좋았던 점은 살리고 아쉬웠던 점은 피해):\n' + logSummary(6) : '') + '\n\n이 도시에서 여행자 조건에 맞는 여행 코스 3안을 서로 확실히 다른 콘셉트로 만들어 조건 일치 순서대로 줘. 콘셉트는 조건에 맞게 정해(예: 취향에 집중, 여유롭게 쉬기, 근교까지 넓게). 세 안 모두 취향·여행 스타일·동행·예산을 지키고, 꼭 원하는 곳(wish)은 세 안 모두에 넣되 강조점이 달라야 해. 실제로 있는 장소만 쓰고, 모든 글은 자연스러운 한국어로 짧게.\n\n' +
     'JSON 하나로만 답해: {"intro":"세 안의 차이 한 문장","courses":[{"title":"짧은 코스 이름","concept":"어떤 여행인지 한 문장","pace":"하루 3곳 · 느긋","match":94,"fitNote":"내 조건과 잘 맞는 점 한 문장","outline":["1일차 테마"],"highlights":["대표 장소","대표 장소","대표 장소"]}]}\n' +
     'courses는 정확히 3개, match 높은 순. outline은 정확히 ' + days + '개.';
   var again = function(){ courseOptions(place, rec); };
@@ -1631,10 +1649,12 @@ function buildPlanCall(place, rec, nights, again, course){
       title: String(data.title || (course && course.title) || (m.city + ' ' + nights + '박 ' + (nights + 1) + '일')), summary: String(data.summary || m.why || ''),
       city: m.city, country: m.country, domestic: m.domestic, airport: m.airport, lat: (rec && hasPos(rec) && rec.city === place ? rec.lat : m.lat), lon: (rec && hasPos(rec) && rec.city === place ? rec.lon : m.lon), currency: (rec && rec.currency) || m.currency || '', expenses: [], photo: m.photo, match: m.match, fit: m.fit, flight: m.flight, season: m.season, budget: m.budget,
       conditions: JSON.parse(JSON.stringify(C.cond)), nights: nights, people: peopleFrom(C.cond.who), startDate: '',
-      days: applyPool(normalizeDays(data.days, nights + 1), usedPool), tips: arr(data.tips).slice(0, 5).map(String), createdAt: Date.now(), updatedAt: Date.now()
+      days: enforceWishes(applyPool(normalizeDays(data.days, nights + 1), usedPool), usedPool), tips: arr(data.tips).slice(0, 5).map(String), createdAt: Date.now(), updatedAt: Date.now()
     };
     if (usedEv) { applyEvKo(usedEv, data.events); storeEvents(trip, usedEv); }
-    C.msgs.push({ who: 'bot', text: '코스를 만들고 내 여행에 저장해 뒀어요. 코스 화면에서 고치거나, 여기서 계속 이야기해도 돼요.' });
+    wishReport(trip, usedPool);
+    var opt = optimizeTrip(trip); if (opt.days || opt.moved) trip.routeNote = '동선을 정리해 하루 이동 거리를 합계 ' + opt.before.toFixed(1) + 'km → ' + opt.after.toFixed(1) + 'km로 줄였어요.';
+    C.msgs.push({ who: 'bot', text: (trip.routeNote ? trip.routeNote + '\n' : '') + '코스를 만들고 내 여행에 저장해 뒀어요. 코스 화면에서 고치거나, 여기서 계속 이야기해도 돼요.' });
     C.suggestions = ['코스 다시 보기', '다른 안으로도 짜줘', '다른 도시 코스 3안도 보여줘'];
     renderChat();
     openTrip(trip, null); saveTrip(true);
@@ -1707,7 +1727,7 @@ function renderLogNote(){
 }
 function recCard(r, i, idx){
   var b = r.budget, tot = Math.max(1, b.flight + b.stay + b.local);
-  return '<article class="rec' + (i === 0 ? ' first' : '') + '"><div class="rec-img">' + photo(r.photo, r.country + ' ' + r.city + ' 분위기 사진') + '<span class="rank">' + (i + 1) + '순위</span><span class="match">종합 일치 ' + r.match + '%</span></div>' +
+  return '<article class="rec' + (i === 0 ? ' first' : '') + '"><div class="rec-img">' + photo(r.photo, r.country + ' ' + r.city + ' 분위기 사진') + '<span class="rank">' + (i + 1) + '순위</span><span class="match">종합 일치 ' + (r.vmatch != null ? r.vmatch : r.match) + '%' + (r.vmatch != null && r.vmatch < r.match ? ' · 검증 반영' : '') + '</span></div>' +
     '<div class="rec-body"><span class="ctry">' + (r.domestic ? '추천 지역' : '추천 나라') + '</span><h3>' + esc(String(r.country).replace(/^국내\s*·\s*/, '') || r.city) + '</h3>' + fitHtml(r.fit) + '<p>' + esc(r.why) + '</p>' +
     (r.weak ? '<p class="meta">아쉬운 점 · ' + esc(r.weak) + '</p>' : '') +
     '<div class="tags">' + r.highlights.map(function(t){ return '<span class="tag">' + esc(t) + '</span>'; }).join('') + '</div>' +
@@ -1745,7 +1765,7 @@ $('msgInput').addEventListener('input', autoGrow);
 // ---------- settings ----------
 
 // ---------- trip editor ----------
-var T = null, tripId = null, curDay = 0, saveTimer = null, armedDel = -1, refineCtl = null;
+var T = null, tripId = null, curDay = 0, saveTimer = null, armedDel = -1, refineCtl = null, openMaps = -1;
 function flushTrip(){ if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; saveTrip(false); } if (refineCtl) { try { refineCtl.abort(); } catch(e){} } }
 function openTrip(trip, id){
   flushTrip();
@@ -1772,7 +1792,7 @@ function saveTrip(first){
   storeSave(tripId, body).then(function(id){ tripId = id; setStatus('saved'); if (first) toast('내 여행에 저장했어요'); })
     .catch(function(e){ setStatus(e && e.code === 'queued' ? 'queued' : 'error'); if (e && (e.code === 'quota_exceeded' || e.code === 'local_full')) toast('저장 공간이 가득 찼어요. 오래된 여행을 지워 주세요.'); });
 }
-function typeClass(t){ return (t === '맛집' || t === '카페') ? 'type food' : 'type'; }
+function typeClass(t){ return (t === '맛집' || t === '카페' || t === '바') ? 'type food' : 'type'; }
 function renderTrip(){
   if (!T) return;
   var nights = T.nights, days = T.days.length;
@@ -1781,18 +1801,18 @@ function renderTrip(){
     '<span class="badge">' + esc(T.country ? T.country + ' · ' : '') + esc(T.city) + '</span><span class="badge">' + nights + '박 ' + days + '일</span><span class="badge">' + esc(range) + '</span>' + (T.match ? '<span class="badge">종합 일치 ' + num(T.match) + '%</span>' : '') +
     '</div><h2>' + esc(T.title) + '</h2><p>' + esc(T.summary) + '</p></div></div>';
   var cc = T.conditions || {};
-  $('fitCard').innerHTML = '<h4>내 조건 반영도</h4>' + (T.fit ? fitHtml(T.fit) : '') + '<ul class="clist" style="margin-top:14px">' + CORE.map(function(l){ var v = cc[l[0]]; return '<li class="' + (v ? 'on' : '') + '"><svg width="18" height="18" aria-hidden="true"><use href="#' + l[2] + '"></use></svg><span class="k">' + l[1] + '</span><span class="v' + (v ? '' : ' none') + '">' + esc(v || '미정') + '</span></li>'; }).join('') + '</ul>';
+  $('fitCard').innerHTML = '<h4>내 조건 반영도</h4>' + (T.fit ? fitHtml(T.fit) : '') + '<ul class="clist" style="margin-top:14px">' + CORE.map(function(l){ var v = cc[l[0]]; return '<li class="' + (v ? 'on' : '') + '"><svg width="18" height="18" aria-hidden="true"><use href="#' + l[2] + '"></use></svg><span class="k">' + l[1] + '</span><span class="v' + (v ? '' : ' none') + '">' + esc(v || '미정') + '</span></li>'; }).join('') + '</ul>' + wishCardHtml();
   $('dayTabs').innerHTML = T.days.map(function(d, i){ var w = dayWx(T, i); return '<button type="button" role="tab" aria-selected="' + (i === curDay) + '" data-day="' + i + '">DAY ' + (i + 1) + (T.startDate ? ' · ' + esc(fmtDate(addDays(T.startDate, i))) : '') + (w ? '<span class="wx">' + WXC(w.code)[0] + ' ' + w.hi + '°</span>' : '') + '</button>'; }).join('');
   var d = T.days[curDay] || { title: '', items: [] }, items = d.items, ph = tripPhase(T), nx = ph && ph.k === 'during' && ph.day === curDay ? nextIndex(T, curDay) : -1, dw = dayWx(T, curDay);
   $('dayBody').innerHTML = '<div class="dayhead"><h3>' + esc(d.title || ('DAY ' + (curDay + 1))) + '</h3><small>' + items.filter(function(x){ return x.done; }).length + ' / ' + items.length + '개 다녀옴</small></div>' +
     (dw ? '<div class="wxline' + (dw.pop >= 60 ? ' rain' : '') + '"><span>' + WXC(dw.code)[0] + ' ' + WXC(dw.code)[1] + ' · 최고 ' + dw.hi + '° / 최저 ' + dw.lo + '° · 비 올 확률 ' + dw.pop + '%</span><span class="fbadge">예보</span><span class="src"><a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0)</span>' + (dw.pop >= 60 && !demoMode ? '<button type="button" class="secondary" data-rainplan="' + curDay + '">비 오는 날 일정으로 바꾸기</button>' : '') + '</div>' : '') +
-    vLine() + (items.length ? '<ol class="items">' + items.map(function(it, i){
-      return '<li class="item' + (it.done ? ' done' : '') + (i === nx ? ' next' : '') + '"><span class="time">' + esc(it.time || '—') + '</span><div class="what"><span class="' + typeClass(it.type) + '">' + esc(it.type) + '</span><strong>' + esc(it.name) + vBadge(it, i) + '</strong>' + (it.why ? '<span class="why">' + esc(it.why) + '</span>' : '') + (it.note ? '<span class="n">' + esc(it.note) + '</span>' : '') + '</div><div class="acts">' +
+    vLine() + hoursLine() + routeLine(d, curDay) + (items.length ? '<ol class="items">' + items.map(function(it, i){
+      return '<li class="item' + (it.done ? ' done' : '') + (i === nx ? ' next' : '') + '">' + (openMaps === i ? '' : '') + '<span class="time">' + esc(it.time || '—') + '</span><div class="what"><span class="' + typeClass(it.type) + '">' + esc(it.type) + '</span><strong>' + esc(it.name) + (it.rt ? '<span class="rt" title="Google 평점 (리뷰 수)">' + esc(it.rt) + '</span>' : '') + vBadge(it, i) + hrsBadge(it) + '</strong>' + (it.why ? '<span class="why">' + esc(it.why) + '</span>' : '') + (it.note ? '<span class="n">' + esc(it.note) + '</span>' : '') + '</div><div class="acts">' +
         '<button type="button" class="icon chk' + (it.done ? ' on' : '') + '" data-done="' + i + '" aria-pressed="' + !!it.done + '" aria-label="' + esc(it.name) + ' 다녀옴 표시">✓</button>' +
-        '<a class="icon" href="' + itemMap(it) + '" target="_blank" rel="noopener" aria-label="' + esc(it.name) + ' 지도에서 보기"><svg width="16" height="16" aria-hidden="true"><use href="#i-pin"></use></svg></a>' +
+        '<button type="button" class="icon" data-maps="' + i + '" aria-expanded="' + (openMaps === i) + '" aria-label="' + esc(it.name) + ' 지도 앱 고르기"><svg width="16" height="16" aria-hidden="true"><use href="#i-pin"></use></svg></button>' +
         '<button type="button" class="icon" data-mv="-1" data-i="' + i + '" aria-label="' + esc(it.name) + ' 위로"' + (i === 0 ? ' disabled' : '') + '><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 15l6-6 6 6"></path></svg></button>' +
         '<button type="button" class="icon" data-mv="1" data-i="' + i + '" aria-label="' + esc(it.name) + ' 아래로"' + (i === items.length - 1 ? ' disabled' : '') + '><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button>' +
-        '<button type="button" class="icon del' + (armedDel === i ? ' armed' : '') + '" data-del="' + i + '" aria-label="' + (armedDel === i ? '한 번 더 누르면 삭제' : esc(it.name) + ' 삭제') + '"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">' + (armedDel === i ? '<path d="M5 12l5 5L20 7"></path>' : '<path d="M6 6l12 12M18 6L6 18"></path>') + '</svg></button></div></li>';
+        '<button type="button" class="icon del' + (armedDel === i ? ' armed' : '') + '" data-del="' + i + '" aria-label="' + (armedDel === i ? '한 번 더 누르면 삭제' : esc(it.name) + ' 삭제') + '"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">' + (armedDel === i ? '<path d="M5 12l5 5L20 7"></path>' : '<path d="M6 6l12 12M18 6L6 18"></path>') + '</svg></button></div>' + (openMaps === i ? mapLinks(it) : '') + '</li>';
     }).join('') + '</ol>' : '<p class="msg" style="padding:16px 0">아직 일정이 없어요. 아래에서 추가하거나 큐레이터에게 요청해 보세요.</p>');
   var end = T.startDate ? addDays(T.startDate, nights) : '';
   var from = cc.from || '인천';
@@ -1812,17 +1832,20 @@ function renderTrip(){
   $('moneyCard').innerHTML = '<h4>예상 경비 (1인, AI 추정)</h4>' + (b.total ? '<div class="money" style="border-top:0;padding-top:0"><div class="sum"><span>합계</span><strong>약 ' + b.total + '만원</strong></div><div class="stack" aria-hidden="true"><i style="width:' + ((b.flight || 0) / tot * 100) + '%"></i><i style="width:' + ((b.stay || 0) / tot * 100) + '%"></i><i style="width:' + ((b.local || 0) / tot * 100) + '%"></i></div><div class="legend"><span>' + (dom ? '교통 ' : '항공 ') + (b.flight || 0) + '만</span><span>숙소 ' + (b.stay || 0) + '만</span><span>현지 ' + (b.local || 0) + '만</span></div><span class="msg">' + esc(T.flight || '') + (cc.budget ? ' · 내 예산: ' + esc(cc.budget) : '') + '</span></div>' : '<p class="msg">경비 정보가 없어요.</p>');
   $('tipsList').innerHTML = (T.tips && T.tips.length ? T.tips : [dom ? '주말·연휴엔 기차표와 숙소가 빨리 차니 미리 예약하세요.' : '출발 전 여권 유효기간(6개월 이상)을 확인하세요.']).map(function(t){ return '<li>' + esc(t) + '</li>'; }).join('') + (T.season ? '<li>' + esc(T.season) + '</li>' : '');
   $('refineBtn').disabled = demoMode || !!refineCtl;
-  renderNow(); renderSpend(); loadForecast(T); checkPlaces(T); renderStays(); renderEvents(); loadEvents(T);
+  renderNow(); renderSpend(); loadForecast(T); checkPlaces(T); checkHours(T); renderStays(); renderEvents(); loadEvents(T); drawDayMap();
   if (demoMode) $('refineMsg').textContent = '로그인하면 큐레이터에게 수정을 요청할 수 있어요.';
 }
-$('dayTabs').addEventListener('click', function(e){ var b = e.target.closest('[data-day]'); if (!b) return; curDay = +b.getAttribute('data-day'); armedDel = -1; renderTrip(); });
+$('dayTabs').addEventListener('click', function(e){ var b = e.target.closest('[data-day]'); if (!b) return; curDay = +b.getAttribute('data-day'); armedDel = -1; openMaps = -1; renderTrip(); });
 $('dayBody').addEventListener('click', function(e){
   var dn = e.target.closest('[data-done]'); if (dn) { var di = +dn.getAttribute('data-done'), itm = T.days[curDay].items[di]; itm.done = !itm.done; touch(); var f = document.querySelector('[data-done="' + di + '"]'); if (f) f.focus(); return; }
+  var od = e.target.closest('[data-optday]'); if (od) { var oi = +od.getAttribute('data-optday'), r0 = optimizeTrip(T, { only: oi, days: false }); if (r0.days) { touch(); toast('DAY ' + (oi + 1) + ' 동선을 정리했어요 · ' + r0.before.toFixed(1) + 'km → ' + r0.after.toFixed(1) + 'km'); } else toast('지금 순서가 이미 가장 짧아요'); return; }
   var vb = e.target.closest('[data-vme]'); if (vb) { var vi = T.days[curDay].items[+vb.getAttribute('data-vme')]; if (vi && vi.v) { if (vi.v.s === 'closed') { vi.v.was = 'closed'; vi.v.s = 'me'; } else if (vi.v.s === 'me') { vi.v.s = vi.v.was === 'closed' ? 'closed' : 'no'; delete vi.v.was; } else vi.v.s = 'me'; touch(); } return; }
   if (e.target.closest('[data-vfix]')) { fixPlaces(); return; }
+  if (e.target.closest('[data-hfix]')) { fixHours(); return; }
   if (e.target.closest('[data-vretry]')) { VC.fail = false; checkPlaces(T); renderTrip(); return; }
   var rp = e.target.closest('[data-rainplan]'); if (rp && refineCtl) { toast('지금 코스를 고치는 중이에요. 끝나면 다시 눌러 주세요.'); return; }
   if (rp) { var dd = +rp.getAttribute('data-rainplan'), w = dayWx(T, dd); $('refineInput').value = 'DAY ' + (dd + 1) + (T.startDate ? '(' + fmtDate(addDays(T.startDate, dd)) + ')' : '') + '에 비 소식이 있어(비 올 확률 ' + (w ? w.pop : 60) + '%). 이날만 실내 위주로 바꿔 줘. 박물관·시장·카페·마사지처럼 비를 피할 수 있는 곳으로, 다른 날은 그대로 두고.'; $('refineBtn').click(); return; }
+  var mp = e.target.closest('[data-maps]'); if (mp) { var mi = +mp.getAttribute('data-maps'); openMaps = openMaps === mi ? -1 : mi; renderTrip(); var f2 = document.querySelector('[data-maps="' + mi + '"]'); if (f2) f2.focus(); return; }
   var mv = e.target.closest('[data-mv]');
   if (mv) { var i = +mv.getAttribute('data-i'), j = i + (+mv.getAttribute('data-mv')), arr = T.days[curDay].items; if (j < 0 || j >= arr.length) return; var t = arr[i]; arr[i] = arr[j]; arr[j] = t; var ti = arr[i].time; arr[i].time = arr[j].time; arr[j].time = ti; armedDel = -1; touch(); return; }
   var del = e.target.closest('[data-del]');
@@ -1845,21 +1868,22 @@ $('refineBtn').addEventListener('click', function(){
   var req = $('refineInput').value.trim(), msg = $('refineMsg');
   if (!req) { msg.className = 'msg err'; msg.textContent = '무엇을 바꿀지 적어 주세요.'; $('refineInput').focus(); return; }
   if (aiMode() === 'none') { msg.className = 'msg err'; msg.textContent = ERR.no_ai; return; }
-  var current = { title: T.title, summary: T.summary, days: T.days.map(function(d){ return { title: d.title, items: d.items.map(function(it){ return { time: it.time, name: it.name, q: it.q || '', type: it.type, why: it.why || '', note: it.note }; }) }; }), tips: T.tips };
+  var current = { title: T.title, summary: T.summary, days: T.days.map(function(d){ return { title: d.title, items: d.items.map(function(it){ return { time: it.time, name: it.name, q: it.q || '', type: it.type, wish: it.wish || '', why: it.why || '', note: it.note }; }) }; }), tips: T.tips };
   var prompt = '너는 한국인 여행자를 위한 여행 큐레이터야. 오늘은 ' + todayStr() + '이야.\n여행지: ' + T.city + ', ' + T.country + ' · ' + T.nights + '박 ' + T.days.length + '일' + (T.startDate ? ' · 출발 ' + T.startDate : '') + '\n여행자 조건:\n' + condText(T.conditions || {}) +
-    '\n\n지금 코스(JSON):\n' + JSON.stringify(current).slice(0, 20000) + '\n\n여행자의 수정 요청: "' + req + '"\n\n요청을 반영해 코스를 고쳐 줘. 요청과 관계없는 일정은 q까지 그대로 두고, 취향과 여행 스타일은 계속 지켜. 실제로 있는 장소만 쓰고(지어내지 말 것) 새 장소에는 q(지도 검색용 공식 이름)를 꼭 넣어. 가격은 쓰지 마. 같은 형식의 JSON 하나로만 답해: {"title":"","summary":"","days":[{"title":"","items":[{"time":"","pid":"","name":"","q":"","type":"","why":"","note":""}]}],"tips":[]} — days는 정확히 ' + T.days.length + '개.';
+    '\n\n지금 코스(JSON):\n' + JSON.stringify(current).slice(0, 20000) + '\n\n여행자의 수정 요청: "' + req + '"\n\n요청을 반영해 코스를 고쳐 줘. 요청과 관계없는 일정은 q까지 그대로 두고, 취향과 여행 스타일은 계속 지켜. 실제로 있는 장소만 쓰고(지어내지 말 것) 새 장소에는 q(지도 검색용 공식 이름)를 꼭 넣어. 가격은 쓰지 마. 같은 형식의 JSON 하나로만 답해: {"title":"","summary":"","days":[{"title":"","items":[{"time":"","pid":"","name":"","q":"","type":"","wish":"","why":"","note":""}]}],"tips":[]} — days는 정확히 ' + T.days.length + '개.';
   refineCtl = new AbortController();
   $('refineBtn').disabled = true; $('refineStop').hidden = false; msg.className = 'msg'; msg.textContent = '코스를 고치는 중… 보통 30~60초 걸려요';
   var tgt = T, myCtl = refineCtl, rPool = null;
-  poolWait(T.city, T, 9000).then(function(pool){ rPool = pool; if (myCtl.signal.aborted) throw { code: 'cancelled' }; return aiJson(prompt + poolText(pool, 'refine'), myCtl.signal); }).then(function(data){
+  var newW = wishFromText(req); if (newW.length) { T.conditions = T.conditions || {}; T.conditions.wish = mergeWish(T.conditions.wish, newW.join(', ')); }
+  poolWait(T.city, T, 9000).then(function(pool){ rPool = pool; if (myCtl.signal.aborted) throw { code: 'cancelled' }; return aiJson(prompt.replace('\n\n여행자의 수정 요청:', condWishLine(T) + '\n\n여행자의 수정 요청:') + poolText(pool, 'refine'), myCtl.signal); }).then(function(data){
     if (T !== tgt) return;
     if (!data || !Array.isArray(data.days)) throw { code: 'invalid_json' };
-    T.days = keepChecks(applyPool(normalizeDays(data.days, T.days.length), rPool), T.days);
+    T.days = keepChecks(enforceWishes(applyPool(normalizeDays(data.days, T.days.length), rPool), rPool), T.days); wishReport(T, rPool); var ro = optimizeTrip(T, { days: false });
     if (data.title) T.title = String(data.title); if (data.summary) T.summary = String(data.summary);
     if (Array.isArray(data.tips) && data.tips.length) T.tips = data.tips.slice(0, 5).map(String);
-    $('refineInput').value = ''; msg.textContent = '요청대로 고쳤어요.'; armedDel = -1; touch();
+    $('refineInput').value = ''; msg.textContent = '요청대로 고쳤어요.' + (ro.days ? ' 동선도 다시 정리했어요(' + ro.before.toFixed(1) + 'km → ' + ro.after.toFixed(1) + 'km).' : ''); armedDel = -1; touch();
   }).catch(function(e){ if (e && e.code === 'cancelled') { msg.textContent = '수정을 멈췄어요.'; return; } msg.className = 'msg err'; msg.textContent = errText(e); })
-    .then(function(){ if (refineCtl === myCtl) { refineCtl = null; $('refineBtn').disabled = demoMode; $('refineStop').hidden = true; } });
+    .then(function(){ if (refineCtl === myCtl) { refineCtl = null; $('refineBtn').disabled = demoMode; $('refineStop').hidden = true; if (T) renderTrip(); } });
 });
 
 $('exportBtn').addEventListener('click', function(){
@@ -2140,14 +2164,75 @@ function climate(lat, lon, month){
 }
 function distKm(a, b){ var R = 6371, t = Math.PI / 180, dLa = (b[0] - a[0]) * t, dLo = (b[1] - a[1]) * t; var h = Math.sin(dLa / 2) * Math.sin(dLa / 2) + Math.cos(a[0] * t) * Math.cos(b[0] * t) * Math.sin(dLo / 2) * Math.sin(dLo / 2); return Math.round(2 * R * Math.asin(Math.sqrt(h))); }
 function hasPos(o){ return o && isFinite(o.lat) && isFinite(o.lon) && (o.lat || o.lon) && Math.abs(o.lat) <= 90 && Math.abs(o.lon) <= 180; }
+
+// ---------- destination check: do the cities exist, how long is the flight really, weather that month, safety ----------
+var GEOC = {};
+function geoCity(name, r){
+  var dom = r.domestic, ctry = String(r.country || '').replace(/^국내\s*·?\s*/, '').split(/\s*·\s*/)[0];
+  var q = String(name || '').replace(/\s*\(.*\)$/, '').trim(); if (!q) return Promise.resolve(null);
+  var key = (dom ? 'd|' : 'a|') + ctry + '|' + q; if (GEOC[key]) return GEOC[key];
+  var tryName = function(n){ return fetch('https://geocoding-api.open-meteo.com/v1/search?count=10&language=ko&name=' + encodeURIComponent(n)).then(function(x){ return x.json(); }).then(function(j){
+    var rs = arr(j && j.results);
+    var g = rs.filter(function(x){ return dom ? x.country_code === 'KR' : x.country_code !== 'KR' && (!ctry || String(x.country || '').indexOf(ctry) >= 0 || ctry.indexOf(String(x.country || '#')) >= 0); })[0];
+    return g ? { ll: [g.latitude, g.longitude], cc: g.country_code, pop: g.population || 0, name: g.name } : null;
+  }); };
+  return GEOC[key] = tryName(q).then(function(g){ if (g || q.split(/\s+/).length < 2) return g; return tryName(q.split(/\s+/)[0]); }).catch(function(){ delete GEOC[key]; return undefined; });
+}
+var ALERTS = null;
+function travelAlert(cc){ if (!window.MT_ALERT || !cc) return Promise.resolve(null); return window.MT_ALERT(cc).catch(function(){ return null; }); }
+function verifyRec(r, cond, f){
+  var month = tripMonth(cond), flags = [];
+  return Promise.all(r.cities.map(function(c){ return geoCity(c.city, r); })).then(function(gs){
+    f.cities = gs.map(function(g, j){ return { city: r.cities[j].city, ok: g === undefined ? null : !!g, ll: g && g.ll, cc: g && g.cc }; });
+    var g0 = gs[0];
+    // the AI's coordinates are a guess; the map's are not
+    if (g0 && (!hasPos(r) || distKm([r.lat, r.lon], g0.ll) > 60)) { r.lat = g0.ll[0]; r.lon = g0.ll[1]; f.fixedPos = true; }
+    var missing = f.cities.filter(function(c){ return c.ok === false; });
+    if (missing.length) flags.push({ lv: 'warn', t: missing.map(function(c){ return c.city; }).join(', ') + '는 지도에서 찾지 못했어요' });
+    var cc = (gs.filter(Boolean)[0] || {}).cc;
+    if (!r.domestic && hasPos(r)) {
+      var from = /부산|김해/.test(cond.from || '') ? [35.1795, 128.9382] : /대구/.test(cond.from || '') ? [35.8941, 128.6589] : /제주/.test(cond.from || '') ? [33.5104, 126.4913] : [37.4602, 126.4407];
+      var dk = distKm(from, [r.lat, r.lon]), h = Math.round((dk / 780 + 0.6) * 2) / 2;
+      f.fly = { km: dk, h: h };
+      var aiH = (String(r.flight || '').match(/(\d+(?:\.\d+)?)\s*시간/) || [])[1];
+      if (aiH && Math.abs(+aiH - h) >= 2) flags.push({ lv: 'warn', t: '직항 기준 비행은 약 ' + h + '시간이에요(AI 추정 ' + aiH + '시간과 달라요)' });
+      if (/가까운 해외/.test(cond.scope || '') && h > 6) flags.push({ lv: 'bad', t: '비행 약 ' + h + '시간 · "가까운 해외"(5시간 안팎) 범위를 넘어요', pen: 20 });
+      if (/장거리/.test(cond.scope || '') && h < 6) flags.push({ lv: 'warn', t: '비행 약 ' + h + '시간 · "장거리 해외"보다 가까워요', pen: 8 });
+      var nights = parseNights(cond.len); if (nights <= 3 && h >= 9) flags.push({ lv: 'warn', t: nights + '박에 비행 ' + h + '시간이면 현지 시간이 짧아요', pen: 10 });
+    }
+    return travelAlert(cc).then(function(al){
+      if (al && al.lvl) { f.alert = al; if (al.lvl >= 4) flags.push({ lv: 'bad', t: '외교부 여행경보 4단계(여행금지)' + (al.region ? ' · ' + al.region : ''), pen: 100 }); else if (al.lvl === 3) flags.push({ lv: 'bad', t: '외교부 여행경보 3단계(출국권고)' + (al.region ? ' · ' + al.region : ''), pen: 40 }); else if (al.lvl === 2) flags.push({ lv: 'warn', t: '외교부 여행경보 2단계(여행자제)' + (al.region ? ' · ' + al.region : ''), pen: 6 }); else flags.push({ lv: 'info', t: '외교부 여행경보 1단계(여행유의)' + (al.region ? ' · ' + al.region : '') }); }
+      f.flags = flags; f.cc = cc;
+    });
+  });
+}
+function climateFlags(r, cond, f){
+  var c = f.clim; if (!c) return;
+  var t = [cond.taste, cond.wish, cond.style].join(' '), out = f.flags || (f.flags = []);
+  if (c.rain >= 15) out.push({ lv: 'warn', t: '그 달은 비 온 날이 약 ' + c.rain + '일(지난 3년)' + (/바다|해변|물놀이|스노클|섬|자연|트레킹|등산/.test(t) ? ' · 야외 위주 여행엔 아쉬워요' : ''), pen: /바다|해변|물놀이|자연|트레킹|등산/.test(t) ? 10 : 4 });
+  if (c.hi >= 34) out.push({ lv: 'warn', t: '낮 최고 ' + c.hi + '°로 매우 더워요', pen: 4 });
+  if (c.hi <= 2) out.push({ lv: 'warn', t: '낮 최고 ' + c.hi + '°로 추워요' + (/스키|눈|온천/.test(t) ? '(겨울 여행엔 좋아요)' : ''), pen: /스키|눈|온천/.test(t) ? 0 : 4 });
+}
+// re-rank the three after checking; never hide the reason
+function rerank(m){
+  if (!m.recs || m.reranked) return;
+  if (!m.recs.every(function(r){ return r.facts && r.facts.done; })) return;
+  m.recs.forEach(function(r){ var pen = arr(r.facts.flags).reduce(function(a, x){ return a + (x.pen || 0); }, 0); r.vmatch = Math.max(0, r.match - pen); });
+  var before = m.recs.map(function(r){ return r.country; }).join('|');
+  m.recs.sort(function(a, b){ return b.vmatch - a.vmatch; });
+  m.reranked = true;
+  if (m.recs.map(function(r){ return r.country; }).join('|') !== before) { m.rerankNote = '실제 데이터(거리·날씨·안전)로 확인한 뒤 순위를 조정했어요.'; m.text += '\n' + m.rerankNote; }
+}
 function factsFor(r, cond){
   var f = { done: false }, ps = [];
+  return verifyRec(r, cond || {}, f).catch(function(){}).then(function(){
   if (hasPos(r)) {
     f.dist = distKm(r.domestic ? [37.5547, 126.9707] : [37.4602, 126.4407], [r.lat, r.lon]);
     ps.push(climate(r.lat, r.lon, tripMonth(cond)).then(function(c){ f.clim = c; }).catch(function(){}));
   }
   if (r.currency && r.currency !== 'KRW' && !r.domestic) ps.push(krwPer(r.currency).then(function(k){ f.fx = { code: r.currency, krw: k }; }).catch(function(){}));
-  return Promise.all(ps).then(function(){ f.done = true; return f; });
+  return Promise.all(ps).then(function(){ climateFlags(r, cond || {}, f); f.done = true; return f; });
+  });
 }
 function fxText(fx){ var k = fx.krw, u = 1; while (k * u < 10 && u < 1e6) u *= 10; var v = k * u; return u.toLocaleString() + ' ' + fx.code + ' ≈ ' + (v >= 100 ? Math.round(v).toLocaleString() : v.toFixed(1)) + '원'; }
 function factsHtml(r){
@@ -2157,11 +2242,13 @@ function factsHtml(r){
   return '<div class="facts"><div class="fh"><span class="fbadge">✓ 실제 데이터</span><span>' + esc(r.cities[0].city) + ' 기준</span></div>' +
     (f.clim ? '<div class="fr2"><span>날씨</span><span>' + f.clim.month + '월 평균 최고 ' + f.clim.hi + '° / 최저 ' + f.clim.lo + '° · 비 온 날 약 ' + f.clim.rain + '일 <span class="muted">(지난 3년 관측)</span></span></div>' : '') +
     (f.fx ? '<div class="fr2"><span>환율</span><span>' + esc(fxText(f.fx)) + ' <span class="muted">(오늘)</span></span></div>' : '') +
-    (f.dist ? '<div class="fr2"><span>거리</span><span>' + (r.domestic ? '서울에서' : '인천에서') + ' 직선 ' + f.dist.toLocaleString() + 'km</span></div>' : '') +
-    '<div class="src">출처 ' + [f.clim ? '날씨 <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0)' : '', f.fx ? '환율 <a href="https://www.exchangerate-api.com" target="_blank" rel="noopener">Rates By Exchange Rate API</a>' : ''].filter(Boolean).join(' · ') + '</div></div>';
+    (f.dist ? '<div class="fr2"><span>거리</span><span>' + (r.domestic ? '서울에서' : '출발지에서') + ' 직선 ' + f.dist.toLocaleString() + 'km' + (f.fly ? ' · 직항이면 비행 약 ' + f.fly.h + '시간' : '') + '</span></div>' : '') +
+    (f.cities ? '<div class="fr2"><span>도시</span><span>' + (f.cities.every(function(c){ return c.ok !== false; }) ? '<span class="okv">✓ ' + f.cities.length + '곳 모두 지도에서 확인</span>' : f.cities.map(function(c){ return c.ok === false ? '<span class="warn">' + esc(c.city) + ' 확인 안 됨</span>' : esc(c.city) + ' ✓'; }).join(' · ')) + '</span></div>' : '') +
+    arr(f.flags).filter(function(x){ return x.lv !== 'info' || true; }).map(function(x){ return '<div class="fr2"><span>' + (x.lv === 'info' ? '안전' : '확인') + '</span><span class="' + (x.lv === 'info' ? '' : 'warn') + '">' + (x.lv === 'info' ? '' : '⚠ ') + esc(x.t) + '</span></div>'; }).join('') +
+    '<div class="src">출처 ' + [f.cities ? '도시 Open-Meteo Geocoding' : '', f.alert ? '여행경보 <a href="https://www.0404.go.kr/" target="_blank" rel="noopener">외교부 해외안전여행</a>' : '', f.clim ? '날씨 <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0)' : '', f.fx ? '환율 <a href="https://www.exchangerate-api.com" target="_blank" rel="noopener">Rates By Exchange Rate API</a>' : ''].filter(Boolean).join(' · ') + '</div></div>';
 }
 function loadFacts(m, chat){
-  m.recs.forEach(function(r){ factsFor(r, chat.cond).then(function(f){ r.facts = f; if (chat === C) refreshRecBlock(m); }); });
+  m.recs.forEach(function(r){ factsFor(r, chat.cond).then(function(f){ r.facts = f; rerank(m); if (chat === C) refreshRecBlock(m); }); });
 }
 
 // ---------- 3. taste profile from the journal ----------
@@ -2460,9 +2547,11 @@ function stayPrefs(t){
   if (/부모님/.test(who)) types.push(isDom(t) ? '호텔' : 'hotel');
   if (/자연|숲|바다|캠핑|힐링/.test(txt) && isDom(t)) types.push('펜션');
   if (/럭셔리|고급|호캉스/.test(txt)) types.push(isDom(t) ? '특급호텔' : 'luxury hotel');
+  var sw = wishList(c).filter(function(w){ return w.stay; });
+  types = sw.map(function(w){ return w.w; }).concat(types);
   if (!types.length) types.push(isDom(t) ? '호텔' : 'hotel');
   var tier = /가성비|저렴|알뜰|배낭/.test(txt) ? '저렴' : /럭셔리|고급|호캉스|특별/.test(txt) ? '고급' : perNight ? (perNight < (isDom(t) ? 8 : 7) ? '저렴' : perNight > (isDom(t) ? 25 : 22) ? '고급' : '보통') : '';
-  return { types: types.slice(0, 3), tier: tier, perNight: perNight, people: people };
+  return { types: types.slice(0, 3), tier: tier, perNight: perNight, people: people, wishes: sw };
 }
 function stayCenter(t){
   var pts = []; t.days.forEach(function(d){ d.items.forEach(function(it){ if (it.v && it.v.s === 'ok' && it.v.lat != null && it.type !== '이동') pts.push([it.v.lat, it.v.lon]); }); });
@@ -2528,9 +2617,13 @@ function staysFor(t){
         if (/모텔|무인텔|motel/i.test(p.cat + p.name) && pref.tier !== '저렴') p.sc -= 3;
         var rm = (p.info || '').match(/★(\d\.\d) \(([\d.]+)(천|만)?\)/); if (rm) { var n = parseFloat(rm[2]) * (rm[3] === '만' ? 10000 : rm[3] === '천' ? 1000 : 1); p.sc += (parseFloat(rm[1]) - 4) * 6 + Math.log10(n + 1); }
       });
+      return Promise.all(pref.wishes.map(function(wp){ return Promise.all(wp.views.filter(function(v){ return v.geo; }).map(function(v){ return waterFor(ll, v.geo).then(function(w){ return [v.geo, w]; }); })); })).then(function(ws){
+      pref.wishes.forEach(function(wp, wi){ var water = {}; ws[wi].forEach(function(x){ water[x[0]] = x[1]; });
+        list.forEach(function(p){ if (p.sc <= -50) return; var ev = wishEvidence({ w: wp.w, types: wp.types.filter(function(t){ return !/^(바|식당)$/.test(t.k); }), views: wp.views }, p, water); (p.wevs = p.wevs || []).push(ev); p.sc += ev.score * 6 + (ev.full ? 3 : 0); }); });
       list = list.filter(function(p){ return p.sc > -50; }).sort(function(a, b){ return b.sc - a.sc; }).slice(0, 30);
       list.forEach(function(p, i){ p.id = 'S' + (i + 1); });
       return { ll: ll, n: c.n, list: list, pref: pref, srcs: list.reduce(function(a, p){ p.srcs.forEach(function(x){ if (a.indexOf(x) < 0) a.push(x); }); return a; }, []) };
+      });
     }).catch(function(e){ delete STAYC[key]; throw e; });
   });
 }
@@ -2540,7 +2633,7 @@ function findStays(){
   var t = T; STL.busy = t; STL.msg = '일정 장소들 가운데에서 실제 숙소를 모으는 중'; renderStays();
   staysFor(t).then(function(pool){
     if (!pool.list.length) throw { code: 'empty' };
-    var keep = function(p, why, tip){ return { name: p.name, ko: p.ko || '', type: p.cat, lat: p.lat, lon: p.lon, u: p.u || '', src: p.src, info: p.info || '', d: p.d, why: why || '', tip: tip || '' }; };
+    var keep = function(p, why, tip){ return { name: p.name, ko: p.ko || '', type: p.cat, lat: p.lat, lon: p.lon, u: p.u || '', src: p.src, info: p.info || '', d: p.d, why: why || '', tip: tip || '', wev: p.wevs ? p.wevs.map(function(e){ return e.text; }).join(' / ') : '' }; };
     if (aiMode() === 'none') return { area: '', picks: pool.list.slice(0, 4).map(function(p){ return keep(p, '일정 중심에서 ' + p.d + 'km'); }), srcs: pool.srcs };
     STL.msg = '내 예산·동행에 맞는 숙소를 고르는 중'; if (T === t) renderStays();
     var c = t.conditions || {}, pf = pool.pref;
@@ -2548,7 +2641,8 @@ function findStays(){
       (pf.perNight ? '\n코스의 숙박비 추정: 1박 객실당 약 ' + pf.perNight + '만원' : '') + (pf.tier ? ' (원하는 가격대: ' + pf.tier + ')' : '') +
       '\n일정 장소: ' + t.days.map(function(d, i){ return (i + 1) + '일차 ' + d.items.filter(function(it){ return it.type !== '이동' && it.type !== '숙소'; }).slice(0, 4).map(function(it){ return vParts(it).ko; }).join('·'); }).join(' / ') +
       '\n\n일정 장소들의 중심 근처에 있는 실제 숙소 후보야(지도·여행 데이터). 형식: 번호|종류|이름|한국어 이름|일정 중심에서 거리|정보(평점·등급·가격대·소개)\n' +
-      pool.list.map(function(p){ return p.id + '|' + p.cat + '|' + p.name + '|' + (p.ko || '') + '|' + (p.d == null ? '?' : p.d + 'km') + '|' + (p.info || ''); }).join('\n') +
+      pool.list.map(function(p){ return p.id + '|' + p.cat + '|' + p.name + '|' + (p.ko || '') + '|' + (p.d == null ? '?' : p.d + 'km') + '|' + (p.info || '') + (p.wevs ? ' · [요청: ' + p.wevs.map(function(e){ return e.text; }).join(' / ') + ']' : ''); }).join('\n') +
+      (pf.wishes.length ? '\n\n숙소에 대한 여행자의 요청(가장 중요): ' + pf.wishes.map(function(w, i){ return (i + 1) + ') ' + w.w; }).join(' / ') + '\n[요청] 근거(✓ 맞음, △ 애매, ✗ 아님, ? 확인 안 됨)를 보고 ✓인 숙소를 최우선으로 골라. 확인 안 된 조건은 why나 tip에 "예약 전 확인 필요"라고 솔직히 적어.' : '') +
       '\n\n이 후보 중에서만 4곳을 골라. 첫 번째는 조건에 가장 잘 맞는 곳, 나머지는 가격대나 분위기가 다른 대안(더 저렴한 곳, 더 좋은 곳 등). 동행(아이·부모님이면 가족실·조용함·이동 편의, 연인이면 분위기, 혼자면 안전과 교통), 예산, 동선(일정 장소와 가깝고 교통이 편한 곳), 평점과 리뷰 수를 따져. 정보가 적은 곳보다 평점·등급 같은 근거가 있는 곳을 우선해. why에는 이 여행자에게 맞는 이유를 25자 안팎으로, tip에는 예약·이용 팁을 25자 안팎으로. area에는 이 일정이면 어느 동네에 묵는 게 좋은지 한 문장.\n' +
       'JSON 하나로만 답해: {"area":"","picks":[{"sid":"S1","why":"","tip":""}]}';
     return aiJson(prompt).then(function(d){
@@ -2580,7 +2674,7 @@ function renderStays(){
   el.innerHTML = head + '<ul class="xlist">' + S.picks.map(function(p, i){
     var on = S.chosen === i;
     return '<li class="' + (on ? 'chosen' : '') + '"><div class="t">' + (i === 0 ? '<span class="fbadge">가장 잘 맞아요</span>' : '') + '<b>' + esc(p.ko && p.ko !== p.name ? p.ko + ' (' + p.name + ')' : p.name) + '</b><span class="srcb">' + esc(p.type) + '</span></div>' +
-      (p.why ? '<span class="why">' + esc(p.why) + '</span>' : '') +
+      (p.why ? '<span class="why">' + esc(p.why) + '</span>' : '') + (p.wev ? '<span class="meta">요청 확인 · ' + esc(p.wev) + '</span>' : '') +
       '<span class="meta">' + esc([p.info, p.d != null ? '일정 중심에서 ' + p.d + 'km' : ''].filter(Boolean).join(' · ')) + '</span>' +
       (p.tip ? '<span class="meta">팁 · ' + esc(p.tip) + '</span>' : '') +
       '<div class="acts2"><a class="chipbtn" href="' + esc(stayBook(p)) + '" target="_blank" rel="noopener">' + (isDom(T) ? '예약 검색' : '요금·예약 보기') + '</a><a class="chipbtn" href="' + esc(stayMap(p)) + '" target="_blank" rel="noopener">지도</a>' + (demoMode ? '' : '<button type="button" class="chipbtn" data-staypick="' + i + '" aria-pressed="' + on + '">' + (on ? '✓ 여기로 정했어요' : '여기로 정하기') + '</button>') + '</div></li>';
@@ -2598,6 +2692,174 @@ $('staysCard').addEventListener('click', function(e){
   }
   touch();
 });
+
+
+// ---------- route: shortest sensible order per day ----------
+function km(a, b){ var R = 6371, t = Math.PI / 180, dLa = (b[0] - a[0]) * t, dLo = (b[1] - a[1]) * t; var h = Math.sin(dLa / 2) * Math.sin(dLa / 2) + Math.cos(a[0] * t) * Math.cos(b[0] * t) * Math.sin(dLo / 2) * Math.sin(dLo / 2); return 2 * R * Math.asin(Math.sqrt(h)); }
+function itLL(it){ if (it.v && it.v.lat != null && (it.v.s === 'ok' || it.v.s === 'me')) return [it.v.lat, it.v.lon]; if (Array.isArray(it.ll)) return it.ll; return null; }
+function stayLL(t){ var c = t.stays && t.stays.chosen >= 0 && t.stays.picks[t.stays.chosen]; return c && c.lat != null ? [c.lat, c.lon] : null; }
+function pathKm(items, start, end){ var pts = []; if (start) pts.push(start); items.forEach(function(it){ var p = itLL(it); if (p) pts.push(p); }); if (end) pts.push(end); var d = 0; for (var i = 1; i < pts.length; i++) d += km(pts[i - 1], pts[i]); return d; }
+function slotFit(it, time){
+  var m = toMin(time); if (m < 0) return 0;
+  if (it.type === '맛집') return (m >= 660 && m <= 870) || (m >= 1050 && m <= 1260) ? 0 : 3;      // lunch 11:00–14:30, dinner 17:30–21:00
+  if (it.type === '바') return m >= 1080 ? 0 : 6;                                                  // bars after 18:00
+  if (it.type === '카페') return m >= 1260 ? 2 : 0;
+  if (it.type === '쇼핑' && /야시장|night/i.test(it.name)) return m >= 1080 ? 0 : 4;
+  return 0;
+}
+function fixedStop(it){ return it.type === '이동' || it.type === '숙소' || it.ev || it.done || !itLL(it); }
+// returns { items, before, after } — keeps every time slot, only changes which stop sits in which slot
+function optimizeDay(items, start, end){
+  var slots = items.map(function(it){ return it.time; }), mov = [];
+  items.forEach(function(it, i){ if (!fixedStop(it)) mov.push(i); });
+  var cost = function(order){ var d = pathKm(order, start, end), pen = 0; order.forEach(function(it, i){ pen += slotFit(it, slots[i]); }); return d + pen; };
+  var before = cost(items), best = items.slice(), bestC = before;
+  if (mov.length < 2) return { items: items, before: pathKm(items, start, end), after: pathKm(items, start, end), changed: false };
+  var place = function(perm){ var o = items.slice(); mov.forEach(function(pos, k){ o[pos] = items[perm[k]]; }); return o; };
+  if (mov.length <= 7) {
+    var permute = function(arr0, l){ if (l === arr0.length) { var o = place(arr0), c = cost(o); if (c < bestC - 1e-9) { bestC = c; best = o; } return; } for (var i = l; i < arr0.length; i++) { var a = arr0.slice(); var tmp = a[l]; a[l] = a[i]; a[i] = tmp; permute(a, l + 1); } };
+    permute(mov.slice(), 0);
+  } else { // 2-opt style swaps for long days
+    var perm = mov.slice(), improved = true, guard = 0;
+    while (improved && guard++ < 50) { improved = false; for (var i = 0; i < perm.length; i++) for (var j = i + 1; j < perm.length; j++) { var p2a = perm.slice(); var tt = p2a[i]; p2a[i] = p2a[j]; p2a[j] = tt; var o2 = place(p2a), c2 = cost(o2); if (c2 < bestC - 1e-9) { bestC = c2; best = o2; perm = p2a; improved = true; } } }
+  }
+  var after = pathKm(best, start, end), was = pathKm(items, start, end);
+  var changed = best.some(function(it, i){ return it !== items[i]; }) && (was - after >= 0.8 || bestC < before - 2.5);
+  if (!changed) return { items: items, before: was, after: was, changed: false };
+  var out = best.map(function(it, i){ var c = Object.assign({}, it); c.time = slots[i]; return c; });
+  return { items: out, before: was, after: after, changed: true };
+}
+// a stop that sits far from its own day but close to another day's area is swapped with a same-type stop there
+function balanceDays(days){
+  var cent = function(d){ var la = 0, lo = 0, n = 0; d.items.forEach(function(it){ var p = itLL(it); if (p && it.type !== '이동') { la += p[0]; lo += p[1]; n++; } }); return n ? [la / n, lo / n] : null; };
+  var moved = 0;
+  for (var round = 0; round < 3; round++) {
+    var C2 = days.map(cent), best = null;
+    days.forEach(function(d, a){ d.items.forEach(function(x, i){
+      if (fixedStop(x) || x.wish || !C2[a]) return;
+      days.forEach(function(e, b){ if (b === a || !C2[b]) return; e.items.forEach(function(y, j){
+        if (fixedStop(y) || y.wish || y.type !== x.type) return;
+        var px = itLL(x), py = itLL(y), gain = km(px, C2[a]) + km(py, C2[b]) - km(px, C2[b]) - km(py, C2[a]);
+        if (gain > 3 && (!best || gain > best.gain)) best = { a: a, i: i, b: b, j: j, gain: gain };
+      }); });
+    }); });
+    if (!best) break;
+    var X = days[best.a].items[best.i], Y = days[best.b].items[best.j], tx = X.time, ty = Y.time;
+    days[best.a].items[best.i] = Object.assign({}, Y, { time: tx }); days[best.b].items[best.j] = Object.assign({}, X, { time: ty }); moved++;
+  }
+  return moved;
+}
+function optimizeTrip(t, opts){
+  opts = opts || {};
+  var st = stayLL(t), moved = opts.days === false ? 0 : balanceDays(t.days), before = 0, after = 0, n = 0;
+  t.days.forEach(function(d, i){
+    if (opts.only != null && opts.only !== i) return;
+    var start = st || null, end = st || null;
+    var r = optimizeDay(d.items, start, end); before += r.before; after += r.after; if (r.changed) { d.items = r.items; n++; }
+  });
+  return { days: n, moved: moved, before: before, after: after };
+}
+function routeLine(d, i){
+  var pts = d.items.map(itLL).filter(Boolean); if (pts.length < 2) return '';
+  var st = stayLL(T), dist = pathKm(d.items, null, null);
+  var stops = (st ? [st] : []).concat(pts).concat(st ? [st] : []).slice(0, 11);
+  var url = 'https://www.google.com/maps/dir/' + stops.map(function(p){ return p[0].toFixed(5) + ',' + p[1].toFixed(5); }).join('/') + '/';
+  return '<div class="routeline"><span>이동 거리 약 ' + (dist < 10 ? dist.toFixed(1) : Math.round(dist)) + 'km <small style="color:var(--muted)">(장소 사이 직선 기준' + (st ? ', 숙소 왕복 제외' : '') + ')</small></span><a href="' + url + '" target="_blank" rel="noopener">이 순서로 경로 보기</a>' + (demoMode || T.example ? '' : '<button type="button" class="chipbtn" data-optday="' + i + '">동선 다시 정리</button>') + '</div>';
+}
+
+
+// ---------- maps: open a stop in Naver / Kakao / Google, and draw the day on a map ----------
+function mapQuery(it){ var v = it.v && it.v.s !== 'no' ? it.v.n : ''; return v || it.q || vParts(it).loc || vParts(it).ko; }
+function mapLinks(it){
+  var q = mapQuery(it), ll = itLL(it), dom = isDom(T), ko = vParts(it).ko;
+  var naver = 'https://map.naver.com/p/search/' + encodeURIComponent((dom ? q : ko + ' ' + T.city));
+  var kakao = it.v && it.v.src === 'kakao' && it.v.u ? it.v.u : ll ? 'https://map.kakao.com/link/map/' + encodeURIComponent(ko) + ',' + ll[0] + ',' + ll[1] : 'https://map.kakao.com/link/search/' + encodeURIComponent(q);
+  var google = it.v && it.v.src === 'google' && it.v.u ? it.v.u : ll ? 'https://www.google.com/maps/search/?api=1&query=' + ll[0] + ',' + ll[1] : mapsUrl(q + ' ' + T.city);
+  var a = function(href, label){ return '<a class="chipbtn" href="' + esc(href) + '" target="_blank" rel="noopener">' + label + '</a>'; };
+  return '<div class="maplinks">' + (dom ? a(naver, '네이버 지도') + a(kakao, '카카오맵') + a(google, 'Google 지도') : a(google, 'Google 지도') + a(naver, '네이버 지도') + (ll ? a(kakao, '카카오맵') : '')) + '</div>';
+}
+var LEAF = null, MAP = null, MAPL = null;
+function loadLeaflet(){
+  if (window.L) return Promise.resolve(window.L);
+  if (LEAF) return LEAF;
+  return LEAF = new Promise(function(ok, no){
+    var css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'vendor/leaflet.css'; document.head.appendChild(css);
+    var js = document.createElement('script'); js.src = 'vendor/leaflet.js'; js.onload = function(){ ok(window.L); }; js.onerror = function(){ LEAF = null; no(0); }; document.head.appendChild(js);
+  });
+}
+function drawDayMap(){
+  var el = $('dayMap'); if (!el) return;
+  if (!T) { el.hidden = true; return; }
+  var d = T.days[curDay] || { items: [] }, st = stayLL(T), pts = [];
+  d.items.forEach(function(it, i){ var p = itLL(it); if (p) pts.push({ p: p, n: i + 1, it: it }); });
+  if (pts.length < 1) { el.hidden = true; return; }
+  el.hidden = false;
+  loadLeaflet().then(function(L){
+    if (!MAP) {
+      MAP = L.map(el, { scrollWheelZoom: false, attributionControl: true });
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>' }).addTo(MAP);
+      MAPL = L.layerGroup().addTo(MAP);
+    }
+    MAPL.clearLayers();
+    var line = [], bounds = [];
+    if (st) { L.marker(st, { icon: L.divIcon({ className: '', html: '<div class="mpin stay">숙</div>', iconSize: [26, 26], iconAnchor: [13, 13] }), title: '숙소' }).addTo(MAPL); bounds.push(st); }
+    pts.forEach(function(x){
+      var cls = /맛집|카페|바/.test(x.it.type) ? 'mpin food' : 'mpin';
+      L.marker(x.p, { icon: L.divIcon({ className: '', html: '<div class="' + cls + '">' + x.n + '</div>', iconSize: [26, 26], iconAnchor: [13, 13] }), title: (x.it.time || '') + ' ' + vParts(x.it).ko }).bindTooltip((x.it.time ? x.it.time + ' ' : '') + vParts(x.it).ko).addTo(MAPL);
+      line.push(x.p); bounds.push(x.p);
+    });
+    if (line.length > 1) L.polyline(line, { color: '#1F4E79', weight: 3, opacity: .7, dashArray: '6 6' }).addTo(MAPL);
+    setTimeout(function(){ MAP.invalidateSize(); if (bounds.length === 1) MAP.setView(bounds[0], 15); else MAP.fitBounds(bounds, { padding: [24, 24], maxZoom: 16 }); }, 0);
+    el.setAttribute('aria-label', 'DAY ' + (curDay + 1) + ' 지도 · ' + pts.length + '곳');
+  }).catch(function(){ el.hidden = true; });
+}
+
+// ---------- opening hours on the actual travel date (Google, when the server has a key) ----------
+var HRS = LS.get('hrs', {}) || {};
+function hm(m){ m = ((m % 1440) + 1440) % 1440; return p2(Math.floor(m / 60)) + ':' + p2(m % 60); }
+function hoursFor(gid){
+  var h = HRS[gid]; if (h && Date.now() - h.at < 7 * 864e5) return Promise.resolve(h.h);
+  if (!window.MT_HOURS) return Promise.reject({ code: 'skip' });
+  return window.MT_HOURS(gid).then(function(r){ HRS[gid] = { at: Date.now(), h: r }; var ks = Object.keys(HRS); if (ks.length > 300) ks.slice(0, ks.length - 250).forEach(function(k){ delete HRS[k]; }); LS.set('hrs', HRS); return r; });
+}
+// is the place open from `time` for at least 45 minutes on that date?
+function openAt(h, dateIso, time){
+  if (!h || !arr(h.periods).length) return null;
+  var m = toMin(time); if (m < 0) return null;
+  var wd = new Date(dateIso + 'T00:00:00').getDay(), W = 7 * 1440, t = wd * 1440 + m;
+  var ps = arr(h.periods);
+  if (ps.length === 1 && ps[0].o && !ps[0].c) return { ok: true, txt: '24시간' };
+  var open = ps.some(function(p){ if (!p.o || !p.c) return false; var a = p.o[0] * 1440 + p.o[1], b = p.c[0] * 1440 + p.c[1]; if (b <= a) b += W; var x = t < a ? t + W : t; return x >= a && x + 45 <= b; });
+  var today = ps.filter(function(p){ return p.o && p.o[0] === wd; });
+  return { ok: open, closedDay: !today.length, txt: today.length ? today.map(function(p){ return hm(p.o[1]) + '–' + (p.c ? hm(p.c[1]) : '24:00'); }).join(', ') : '' };
+}
+var HC = { run: null };
+function checkHours(t){
+  if (!t || t.example || demoMode || !t.startDate || !window.MT_HOURS || HC.run === t) return;
+  var todo = []; t.days.forEach(function(d, di){ var date = addDays(t.startDate, di); d.items.forEach(function(it){ if (!it.v || !it.v.gid || it.type === '이동' || it.type === '숙소' || it.ev) { if (it.hrs) delete it.hrs; return; } var k = date + '|' + it.time + '|' + it.v.gid; if (!it.hrs || it.hrs.k !== k) todo.push({ it: it, date: date, k: k }); }); });
+  if (!todo.length) return;
+  HC.run = t; var changed = false;
+  (function next(i){
+    if (i >= todo.length || T !== t) { HC.run = null; if (changed && T === t) { renderTrip(); saveLater(); } return; }
+    var x = todo[i];
+    hoursFor(x.it.v.gid).then(function(h){ var r = openAt(h, x.date, x.it.time); if (r) { x.it.hrs = { k: x.k, ok: r.ok, closed: !!r.closedDay, txt: r.txt }; changed = true; } else x.it.hrs = { k: x.k, ok: true, txt: '' }; })
+      .catch(function(){}).then(function(){ setTimeout(function(){ next(i + 1); }, 60); });
+  })(0);
+}
+function hrsBadge(it){ if (!it.hrs || it.hrs.ok || !T.startDate) return ''; return '<span class="hrs" title="Google 지도 영업시간 기준">' + (it.hrs.closed ? '⏰ 그날 휴무' : '⏰ 이 시간 영업 아님' + (it.hrs.txt ? ' (' + esc(it.hrs.txt) + ')' : '')) + '</span>'; }
+function hoursLine(){
+  if (!T || !T.startDate || T.example || demoMode) return '';
+  var bad = []; T.days.forEach(function(d, di){ d.items.forEach(function(it){ if (it.hrs && !it.hrs.ok) bad.push({ d: di, it: it }); }); });
+  if (!bad.length) return '';
+  return '<div class="vline warn"><span><b>' + bad.length + '곳</b>은 그 날짜·시간에 영업하지 않아요 (Google 지도 영업시간 기준)</span><button type="button" class="secondary" data-hfix="1"' + (refineCtl ? ' disabled' : '') + '>영업시간에 맞게 고치기</button></div>';
+}
+function fixHours(){
+  if (!T || refineCtl) return;
+  var lines = []; T.days.forEach(function(d, di){ d.items.forEach(function(it){ if (it.hrs && !it.hrs.ok) lines.push((di + 1) + '일차(' + fmtDate(addDays(T.startDate, di)) + ') ' + it.time + ' ' + vParts(it).ko + ': ' + (it.hrs.closed ? '그날 휴무' : '그 시간 영업 아님, 그날 영업 ' + it.hrs.txt)); }); });
+  if (!lines.length) return;
+  $('refineInput').value = '아래 장소들이 그 날짜·시간에 영업하지 않아. 영업하는 시간으로 순서를 바꾸거나, 휴무면 같은 종류의 근처 다른 곳으로 바꿔 줘. 다른 일정은 그대로 둬.\n' + lines.join('\n');
+  $('refineBtn').click();
+}
 
 // ---------- 6. on the trip: today, next stop, forecast, rain plan ----------
 var WX = {};
@@ -2622,7 +2884,7 @@ var POOLS = {};
 var CHAINS = /스타벅스|투썸|이디야|메가.?커피|메가MGC|빽다방|컴포즈|맥도날드|버거킹|롯데리아|맘스터치|KFC|파리바게뜨|뚜레쥬르|배스킨|던킨|폴바셋|할리스|커피빈|엔제리너스|파스쿠찌|공차|Starbucks|McDonald|Burger King|KFC|Subway|Domino|Pizza Hut|7-Eleven|FamilyMart|Lawson|Tim Hortons|Costa Coffee|Dunkin/i;
 function poolPrefs(cond){
   cond = cond || C.cond || {}; var t = [cond.taste, cond.style, cond.who, cond.extra, tasteText()].join(' ');
-  var q = { 명소: 55, 맛집: 55, 카페: 20, 쇼핑: 12, 체험: 10 }, boost = {};
+  var q = { 명소: 55, 맛집: 55, 카페: 20, 쇼핑: 12, 체험: 10, 바: 0 }, boost = {};
   if (/미식|맛집|음식|먹|식도락|로컬 ?푸드|노포/.test(t)) { q.맛집 = 75; boost.food = 1; }
   if (/카페|커피|디저트|빵|베이커리/.test(t)) { q.카페 = 40; boost.cafe = 1; }
   if (/쇼핑|시장|마켓|아울렛/.test(t)) { q.쇼핑 = 28; boost.shop = 1; }
@@ -2630,12 +2892,13 @@ function poolPrefs(cond){
   if (/자연|바다|해변|산|숲|트레킹|등산|하이킹|호수|섬|경치|풍경/.test(t)) boost.nature = 1;
   if (/역사|문화|박물관|유적|사찰|성당|궁/.test(t)) boost.history = 1;
   if (/예술|미술|갤러리|전시|건축|디자인/.test(t)) boost.art = 1;
-  if (/야경|밤|나이트|바|술/.test(t)) boost.night = 1;
-  var kw = String(cond.taste || '').split(/[,\s/·+]+|그리고|및/).map(function(x){ return x.replace(/(좋아|위주|중심|여행|투어)$/, '').trim(); }).filter(function(x){ return x.length >= 2 && !/^(느긋|알차|여유|적당)/.test(x); }).slice(0, 3);
+  if (/야경|나이트|술집|칵테일|와인|재즈|펍|맥주|LP|엘피|루프탑|[가-힣A-Za-z]바(?=$|[\s,·.!?])|\b(bar|pub)\b/i.test(t + ' ' + (cond.wish || ''))) boost.night = 1;
+  var kw = String(cond.taste || '').split(/[,/·+]+|그리고|및/).map(function(x){ return x.replace(/\s*(좋아해?|위주로?|중심으로?|여행|투어|하고 싶어)$/, '').trim(); }).filter(function(x){ return x.length >= 2 && !/^(느긋|알차|여유|적당)/.test(x); }).slice(0, 3);
   var bt = [cond.budget, cond.style, cond.taste].join(' '), budget = /가성비|저렴|아끼|저예산|싸게|알뜰/.test(bt) ? 'low' : /럭셔리|고급|호캉스|미슐랭|파인|특별한 날|플렉스/.test(bt) ? 'high' : '';
   var EN = { '국수': 'noodle', '라멘': 'ramen', '라면': 'ramen', '스시': 'sushi', '초밥': 'sushi', '해산물': 'seafood', '해물': 'seafood', '바베큐': 'bbq', '고기': 'grill', '길거리': 'street food', '야시장': 'night market', '시장': 'market', '디저트': 'dessert', '빵': 'bakery', '커피': 'coffee', '채식': 'vegetarian', '비건': 'vegan', '쌀국수': 'pho', '카레': 'curry', '딤섬': 'dim sum', '타파스': 'tapas', '와인': 'wine', '맥주': 'beer', '노포': 'local', '현지': 'local', '전통': 'traditional' };
   var words = []; Object.keys(EN).forEach(function(k){ if (t.indexOf(k) >= 0) words.push(EN[k]); });
   if (boost.food) q.맛집 = Math.max(q.맛집, 80);
+  if (boost.night) q.바 = 25;
   return { quota: q, boost: boost, kw: kw, chainsOk: /프랜차이즈|체인|스타벅스/.test(t), budget: budget, words: words };
 }
 function cityCenter(place, rec){
@@ -2676,7 +2939,8 @@ function osmPool(ll, pref, dom){
     ');out center tags 320;(' +
     (dom ? '' : 'nwr' + F + '["amenity"="cafe"]["name"]["name:ko"];') +
     'nwr' + F + '["amenity"="cafe"]["name"]["opening_hours"]["website"];' +
-    ');out center tags 120;';
+    ');out center tags 120;' +
+    (pref.boost.night ? '(nwr' + F + '["amenity"~"^(bar|pub|nightclub)$"]["name"]["opening_hours"];nwr' + F + '["amenity"~"^(bar|pub)$"]["name"]["name:ko"];nwr' + F + '["amenity"~"^(bar|pub)$"]["name"]["live_music"];);out center tags 120;' : '');
   var today = isoToday(), old = String(+today.slice(0, 4) - 3) + today.slice(4);
   return overpass(q).then(function(j){
     var seen = {}, out = [];
@@ -2686,7 +2950,7 @@ function osmPool(ll, pref, dom){
       if (Object.keys(t).some(function(k){ return /^(disused|was|abandoned|demolished|removed|razed):/.test(k); })) return;
       if (/^(closed|off)$/i.test(String(t.opening_hours || '')) || (t.end_date && String(t.end_date) <= today) || /\b(closed|permanently)\b|폐업|휴업|閉店/i.test(name)) return;
       var lat = e.lat != null ? e.lat : e.center && e.center.lat, lon = e.lon != null ? e.lon : e.center && e.center.lon; if (!isFinite(lat) || !isFinite(lon)) return;
-      var am = t.amenity, cat = am === 'restaurant' || am === 'food_court' ? '맛집' : am === 'cafe' ? '카페' : am === 'marketplace' || t.shop ? '쇼핑' : /^(theme_park|zoo|aquarium)$/.test(t.tourism || '') || t.leisure === 'water_park' ? '체험' : '명소';
+      var am = t.amenity, cat = am === 'bar' || am === 'pub' || am === 'nightclub' ? '바' : am === 'restaurant' || am === 'food_court' ? '맛집' : am === 'cafe' ? '카페' : am === 'marketplace' || t.shop ? '쇼핑' : /^(theme_park|zoo|aquarium)$/.test(t.tourism || '') || t.leisure === 'water_park' ? '체험' : '명소';
       var sub = t.cuisine ? String(t.cuisine).split(';')[0] : t.tourism || t.historic || t.natural || t.leisure || (am === 'place_of_worship' ? (t.religion || 'worship') : am) || '';
       var sc = (t.wikidata ? 4 : 0) + (t.wikipedia ? 3 : 0) + (t['name:ko'] ? (dom ? 0 : 3) : 0) + (t['name:en'] ? 1 : 0) + (t.website || t['contact:website'] ? 1 : 0) + (t.opening_hours ? 1 : 0) + (t.cuisine ? 0.5 : 0) + (t.check_date && t.check_date >= old ? 1 : 0) + (t.tourism === 'attraction' || t.tourism === 'museum' ? 1 : 0);
       if ((t['brand:wikidata'] || CHAINS.test(name)) && !pref.chainsOk) return;
@@ -2774,7 +3038,7 @@ function wvPool(place, ll, pref){
           if (f.lastedit && /^\d{4}-\d{2}-\d{2}$/.test(f.lastedit) && f.lastedit < stale) return;
           var txt = (name + ' ' + content).toLowerCase(), cat;
           if (x.type === 'eat') cat = /\b(cafe|café|coffee|bakery|dessert|tea ?house|patisserie)\b/.test(txt) ? '카페' : '맛집';
-          else if (x.type === 'drink') { if (/\b(cafe|café|coffee|tea)\b/.test(txt)) cat = '카페'; else if (pref.boost.night) cat = '맛집'; else return; }
+          else if (x.type === 'drink') { if (/\b(cafe|café|coffee|tea)\b/.test(txt)) cat = '카페'; else if (pref.boost.night) cat = '바'; else return; }
           else if (x.type === 'see') cat = '명소';
           else if (x.type === 'do') cat = '체험';
           else if (x.type === 'buy') { if (/market|mall|bazaar|street|night/.test(txt)) cat = '쇼핑'; else return; }
@@ -2794,8 +3058,224 @@ function wvPool(place, ll, pref){
     });
   });
 }
+
+// ---------- "꼭 원하는 곳": keep the traveller's exact asks, search for them, prove each one ----------
+var PLACE_NOUN = '바|펍|카페|커피숍|맛집|식당|레스토랑|이자카야|포차|술집|시장|야시장|해변|해수욕장|공원|전망대|미술관|박물관|갤러리|서점|책방|숙소|호텔|리조트|펜션|풀빌라|게스트하우스|한옥스테이|한옥|온천|스파|사우나|라운지|클럽|와이너리|양조장|브루어리|베이커리|빵집|디저트|오마카세|노포|국숫집|횟집|선술집';
+function wishFromText(text){
+  var nounRe = new RegExp('(' + PLACE_NOUN + ')$'), bareRe = new RegExp('^(' + PLACE_NOUN + ')$'), out = [];
+  String(text || '').replace(/\bLP\s?바/gi, 'LP바').split(/[\n,.!?~;·]+/).forEach(function(seg){
+    var cur = [];
+    seg.trim().split(/\s+/).forEach(function(tok){
+      var core = tok.replace(/(이나|이랑|하고|에서|으로|까지|부터|같은|나|랑|에|이|가|을|를|도|은|는|로|들|와|과)$/, '');
+      // connectors and verbs end a phrase ("좋아하고", "부모님이랑", "가고 싶어")
+      if (/^(저녁|아침|점심|밤|낮|오전|오후|새벽|첫날|둘째\s?날|셋째\s?날|마지막\s?날|\d+일차|일정|코스|하루|이번)(엔|에|에는|은|는|도|엔꼭)?$/.test(tok) || /^(그리고|또|또는|및|좀|꼭|그냥|진짜|정말|특히|저는|나는|내가|우리|한번|가고|가보고|싶어|싶은|좋아|좋겠어|원해)$/.test(tok) || (/(하고|해서|하며|싶고|싶어|좋아|이랑|랑)$/.test(tok) && !nounRe.test(core))) { cur = []; return; }
+      if (!nounRe.test(core)) { cur.push(tok); return; }
+      cur.push(core);
+      var w = cur.slice(-4).join(' ').trim(); cur = [];
+      if (bareRe.test(w) || w.length < 3) return;                                   // "카페" alone is not a specific wish
+      if (/^[가-힣A-Za-z0-9]?(바|펍)$/.test(core) || /^(바로|바람|바닥|바보|바쁜)/.test(core)) return; // "바로 추천해줘" is not a bar
+      out.push(w);
+    });
+  });
+  return out.filter(function(x, i, a){ return a.indexOf(x) === i; }).slice(0, 6);
+}
+function mergeWish(a, b){ var L = []; [a, b].forEach(function(x){ String(x || '').split(/\s*[,，]\s*/).forEach(function(w){ w = w.trim(); if (w && !L.some(function(y){ return vNorm(y) === vNorm(w) || vNorm(y).indexOf(vNorm(w)) >= 0; })) { L = L.filter(function(y){ return vNorm(w).indexOf(vNorm(y)) < 0; }); L.push(w); } }); }); return L.slice(0, 8).join(', '); }
+var STAY_WORD = /숙소|호텔|리조트|펜션|풀빌라|게스트하우스|한옥스테이|에어비앤비|민박|글램핑|캠핑장|객실|수영장|인피니티|조식/;
+function wishList(cond){
+  cond = cond || {};
+  var L = String(cond.wish || '').split(/\s*[,，]\s*/).concat(wishFromText(cond.taste), wishFromText(cond.extra)).map(function(x){ return x.trim(); }).filter(Boolean);
+  var out = []; L.forEach(function(w){ if (!out.some(function(y){ return vNorm(y) === vNorm(w); })) out.push(w); });
+  return out.slice(0, 6).map(function(w){ return wishParts(w); });
+}
+var WISH_TYPES = [
+  { k: 'LP바', re: /\bLP|엘피|바이닐|vinyl|레코드|record|음악 ?감상|music ?bar|뮤직 ?바|listening/i, en: 'vinyl record bar', osm: 'bar' },
+  { k: '재즈바', re: /재즈|jazz/i, en: 'jazz bar', osm: 'bar' },
+  { k: '루프탑', re: /루프탑|rooftop|옥상|roof ?top/i, en: 'rooftop bar', osm: 'bar' },
+  { k: '와인바', re: /와인|wine/i, en: 'wine bar', osm: 'bar' },
+  { k: '칵테일바', re: /칵테일|cocktail|스피크이지|speakeasy/i, en: 'cocktail bar', osm: 'bar' },
+  { k: '펍', re: /펍|\bpub\b|맥주|beer|브루어리|brewery|ipa/i, en: 'pub', osm: 'bar' },
+  { k: '바', re: /([가-힣A-Za-z]바$)|\bbar\b|술집|이자카야|izakaya|포차|라운지|lounge/i, en: 'bar', osm: 'bar' },
+  { k: '카페', re: /카페|cafe|café|커피|coffee|디저트|dessert|베이커리|bakery|빵/i, en: 'cafe', osm: 'cafe' },
+  { k: '서점', re: /서점|책방|book/i, en: 'bookstore', osm: '' },
+  { k: '오마카세', re: /오마카세|omakase|스시|sushi/i, en: 'omakase sushi', osm: 'restaurant' },
+  { k: '횟집', re: /횟집|회센터|해산물|seafood|fish/i, en: 'seafood restaurant', osm: 'restaurant' },
+  { k: '국수', re: /국수|국숫집|noodle|ramen|라멘|쌀국수|pho/i, en: 'noodle shop', osm: 'restaurant' },
+  { k: '노포', re: /노포|오래된|old|traditional|전통/i, en: 'traditional local restaurant', osm: 'restaurant' },
+  { k: '시장', re: /시장|market|야시장/i, en: 'market', osm: '' },
+  { k: '전망대', re: /전망대|observatory|viewpoint/i, en: 'viewpoint', osm: '' },
+  { k: '미술관', re: /미술관|갤러리|gallery|museum|박물관/i, en: 'museum gallery', osm: '' },
+  { k: '온천', re: /온천|스파|spa|onsen|사우나|찜질/i, en: 'hot spring spa', osm: '' },
+  { k: '수영장', re: /수영장|인피니티|pool/i, en: 'pool', osm: '' },
+  { k: '식당', re: /맛집|식당|레스토랑|restaurant/i, en: 'restaurant', osm: 'restaurant' }];
+var WISH_VIEWS = [
+  { k: '오션뷰', re: /오션 ?뷰|바다 ?뷰|바다가? ?보이는|바닷가|해변|비치|해안|sea ?view|ocean ?view|beach|seaside|oceanfront|beachfront/i, geo: 'coast', words: /오션|바다|비치|해변|해안|ocean|sea ?view|seaside|beach|harbou?r|marina/i, en: 'ocean view' },
+  { k: '리버뷰', re: /리버 ?뷰|강 ?뷰|강이 보이는|강변|river ?view|riverside/i, geo: 'river', words: /리버|강변|river/i, en: 'river view' },
+  { k: '야경', re: /야경|시티 ?뷰|city ?view|night ?view|skyline|스카이라인|높은 층/i, geo: '', words: /루프탑|rooftop|스카이|sky|전망|view|tower|타워|\d{2}층/i, en: 'skyline view' },
+  { k: '마운틴뷰', re: /산 ?뷰|마운틴|mountain|숲 ?뷰|forest/i, geo: '', words: /mountain|산|숲|forest/i, en: 'mountain view' }];
+function wishParts(w){
+  var types = WISH_TYPES.filter(function(t){ return t.re.test(w); });
+  if (types.length > 1) types = types.filter(function(t){ return t.k !== '바' && t.k !== '식당'; }).concat(types.filter(function(t){ return t.k === '바'; })).slice(0, 2);
+  var views = WISH_VIEWS.filter(function(v){ return v.re.test(w); });
+  return { w: w, types: types, views: views, stay: STAY_WORD.test(w) };
+}
+function wishCat(wp){ var t = wp.types[0]; if (!t) return '명소'; return t.osm === 'bar' ? '바' : t.osm === 'cafe' ? '카페' : t.osm === 'restaurant' ? '맛집' : /시장/.test(t.k) ? '쇼핑' : /온천|수영장/.test(t.k) ? '체험' : '명소'; }
+// coastline / river geometry → "how far is this place from the water"
+var WATER = {};
+function waterFor(ll, kind){
+  var key = kind + ll[0].toFixed(2) + ',' + ll[1].toFixed(2); if (WATER[key]) return WATER[key];
+  var A = '(around:20000,' + ll[0].toFixed(4) + ',' + ll[1].toFixed(4) + ')';
+  var q = kind === 'river' ? '[out:json][timeout:25];(way' + A + '["waterway"="river"];way' + A + '["natural"="water"]["water"="river"];);out geom 400;'
+    : '[out:json][timeout:25];(way' + A + '["natural"="coastline"];nwr' + A + '["natural"~"^(beach|bay)$"];);out geom 600;';
+  return WATER[key] = overpass(q).then(function(j){
+    var segs = [], pts = [];
+    arr(j && j.elements).forEach(function(e){ var g = arr(e.geometry); if (g.length > 1) for (var i = 1; i < g.length; i++) segs.push([g[i - 1].lat, g[i - 1].lon, g[i].lat, g[i].lon]); else if (e.lat != null) pts.push([e.lat, e.lon]); else if (e.center) pts.push([e.center.lat, e.center.lon]); });
+    return { segs: segs, pts: pts };
+  }).catch(function(){ delete WATER[key]; return null; });
+}
+function waterDist(W, lat, lon){
+  if (!W || (!W.segs.length && !W.pts.length) || lat == null) return null;
+  var k = Math.cos(lat * Math.PI / 180), best = Infinity;
+  var P = function(a, b){ return [(b - lon) * 111320 * k, (a - lat) * 110540]; };
+  W.segs.forEach(function(s){ var a = P(s[0], s[1]), b = P(s[2], s[3]), dx = b[0] - a[0], dy = b[1] - a[1], L = dx * dx + dy * dy, t = L ? Math.max(0, Math.min(1, -(a[0] * dx + a[1] * dy) / L)) : 0, x = a[0] + t * dx, y = a[1] + t * dy; best = Math.min(best, Math.sqrt(x * x + y * y)); });
+  W.pts.forEach(function(p){ var a = P(p[0], p[1]); best = Math.min(best, Math.sqrt(a[0] * a[0] + a[1] * a[1])); });
+  return isFinite(best) ? Math.round(best) : null;
+}
+// does this candidate satisfy each part of the wish? returns evidence the AI and the user can see
+function wishEvidence(wp, p, water){
+  var txt = [p.name, p.ko, p.sub, p.cat, p.info, p.kcat].join(' ');
+  var parts = [], ok = 0, need = wp.types.length + wp.views.length;
+  wp.types.forEach(function(t){ var hit = t.re.test(txt) || (t.k === '바' && /\bbar\b|\bpub\b|술집|바$/.test(txt)); parts.push(t.k + (hit ? ' ✓' : ' ?')); if (hit) ok++; });
+  wp.views.forEach(function(v){
+    var d = v.geo && water ? waterDist(water[v.geo], p.lat, p.lon) : null, named = v.words.test([p.name, p.ko, p.sub, p.kcat].join(' ')); // names only, never the address
+    var hit = d != null ? (d <= 250 || (named && d <= 400)) : named, maybe = !hit && (d != null ? d <= 600 || named : false);
+    parts.push(v.k + (hit ? ' ✓' : maybe ? ' △' : ' ✗') + (d != null ? '(' + (v.geo === 'coast' ? '해안' : '강') + ' ' + (d >= 1000 ? (d / 1000).toFixed(1) + 'km' : d + 'm') + ')' : named ? '(이름·분류)' : ''));
+    if (hit) ok++; else if (maybe) ok += 0.5;
+  });
+  return { full: need > 0 && ok >= need, score: need ? ok / need : 0, text: parts.join(', ') };
+}
+function wishQueries(city, wp){
+  var t = wp.types[0], v = wp.views[0], qs = [city + ' ' + wp.w];
+  if (t && v) { qs.push(city + ' ' + (v.k === '오션뷰' ? '바다' : v.k) + ' ' + t.k); qs.push(city + ' ' + t.k); }
+  else if (t && t.k !== wp.w) qs.push(city + ' ' + t.k);
+  return qs.filter(function(x, i, a){ return a.indexOf(x) === i; }).slice(0, 3);
+}
+function osmWish(ll, wp){
+  var t = wp.types[0]; if (!t || !t.osm) return Promise.resolve([]);
+  var A = '(around:15000,' + ll[0].toFixed(5) + ',' + ll[1].toFixed(5) + ')';
+  var am = t.osm === 'bar' ? '^(bar|pub|nightclub|biergarten)$' : t.osm === 'cafe' ? '^(cafe)$' : '^(restaurant)$';
+  return overpass('[out:json][timeout:25];nwr' + A + '["amenity"~"' + am + '"]["name"];out center tags 500;').then(function(j){
+    var out = [];
+    arr(j && j.elements).forEach(function(e){
+      var tg = e.tags || {}, name = String(tg.name || ''), lat = e.lat != null ? e.lat : e.center && e.center.lat, lon = e.lon != null ? e.lon : e.center && e.center.lon; if (!name || !isFinite(lat)) return;
+      if (Object.keys(tg).some(function(k){ return /^(disused|was|abandoned):/.test(k); })) return;
+      var sub = [tg.amenity, tg.cuisine, tg.live_music ? 'live music' : '', tg['music'] || '', tg.description || ''].filter(Boolean).join(' ');
+      out.push({ name: name, ko: String(tg['name:ko'] || ''), cat: t.osm === 'bar' ? '바' : t.osm === 'cafe' ? '카페' : '맛집', sub: sub.slice(0, 60), lat: lat, lon: lon, src: 'osm', sc: 1 + (tg.website ? 0.5 : 0) + (tg.opening_hours ? 0.5 : 0), u: 'https://www.openstreetmap.org/' + e.type + '/' + e.id });
+    });
+    return out;
+  }).catch(function(){ return []; });
+}
+function wvWish(place, ll, wp){
+  var t = wp.types[0], v = wp.views[0]; if (!t && !v) return Promise.resolve([]);
+  return wvAll(place, ll).then(function(W){
+    var out = [];
+    W.listings.forEach(function(x){
+      if (['drink', 'eat', 'see', 'do', 'buy'].indexOf(x.type) < 0) return;
+      var name = wvClean(x.f.name), content = wvClean(x.f.content || ''); if (!name || /permanently closed|has closed/i.test(content)) return;
+      var txt = name + ' ' + content; if (t && !t.re.test(txt) && !(t.en && new RegExp(t.en.split(' ')[0], 'i').test(txt))) return;
+      var lat = parseFloat(x.f.lat), lon = parseFloat(x.f.long || x.f.lon), has = isFinite(lat) && isFinite(lon) && (lat || lon);
+      out.push({ name: name, ko: '', cat: x.type === 'drink' && !/cafe|coffee|tea/i.test(txt) ? '바' : x.type === 'drink' ? '카페' : wishCat(wp), sub: '', lat: has ? lat : null, lon: has ? lon : null, src: 'wv', sc: 2, info: content.slice(0, 90), u: 'https://en.wikivoyage.org/wiki/' + encodeURIComponent(W.title.replace(/ /g, '_')) });
+    });
+    return out;
+  }).catch(function(){ return []; });
+}
+var WSC = {};
+// search every way we can for one wish, then keep only places with evidence for it
+function wishSearch(city, ll, dom, wp){
+  var key = (dom ? 'd|' : 'a|') + city + '|' + wp.w; if (WSC[key]) return WSC[key];
+  var srv = window.MT_PLACE, needWater = wp.views.filter(function(v){ return v.geo; }).map(function(v){ return v.geo; });
+  var live = srv ? Promise.all(wishQueries(city, wp).map(function(q){ return srv(q, ll, dom, 15).catch(function(){ return { items: [] }; }); })).then(function(rs){
+    var out = []; rs.forEach(function(r, qi){ arr(r && r.items).forEach(function(it, i){ out.push({ name: it.name, ko: '', cat: wishCat(wp), sub: String(it.type || it.cat || '').split('>').slice(-2).join(' ').trim(), kcat: it.cat || it.type || '', lat: it.lat, lon: it.lon, u: it.u, src: r.src || 'osm', status: it.status, sc: 3 - qi - i / 15 }); }); });
+    return out.filter(function(x){ return x.status !== 'CLOSED_PERMANENTLY' && x.status !== 'CLOSED_TEMPORARILY'; });
+  }) : Promise.resolve([]);
+  return WSC[key] = Promise.all([live, osmWish(ll, wp), dom ? Promise.resolve([]) : wvWish(city, ll, wp), Promise.all(needWater.map(function(k){ return waterFor(ll, k); }))]).then(function(r){
+    var water = {}; needWater.forEach(function(k, i){ water[k] = r[3][i]; });
+    var list = mergePools([r[0], r[1], r[2]]).filter(function(p){ return p.lat == null || distKm(ll, [p.lat, p.lon]) <= 30; });
+    list.forEach(function(p){ var ev = wishEvidence(wp, p, water); p.wishEv = ev; p.sc += ev.score * 10 + (ev.full ? 5 : 0); });
+    // a candidate must at least be the right kind of place
+    list = list.filter(function(p){ return wp.types.length ? p.wishEv.text.indexOf(wp.types[0].k + ' ✓') >= 0 : p.wishEv.score > 0; });
+    list.sort(function(a, b){ return b.sc - a.sc; });
+    return { wp: wp, list: list.slice(0, 8), coastal: water.coast ? !!(water.coast.segs.length || water.coast.pts.length) : null };
+  }).catch(function(){ delete WSC[key]; return { wp: wp, list: [] }; });
+}
+function wishesFor(city, ll, dom, cond, stay){
+  var ws = wishList(cond).filter(function(wp){ return !!wp.stay === !!stay && (wp.types.length || wp.views.length); });
+  if (!ws.length || !ll) return Promise.resolve([]);
+  return Promise.all(ws.map(function(wp){ return wishSearch(city, ll, dom, wp); }));
+}
+// put wish candidates into the pool (marked), so the AI can pick them by number
+function addWishes(pool, found){
+  if (!pool || !found || !found.length) return pool;
+  var n = pool.list.length;
+  found.forEach(function(f, wi){
+    f.list.forEach(function(p){
+      var ex = pool.list.filter(function(q){ return vSim(q.name, p.name) >= 0.85 || (q.ko && p.ko && vSim(q.ko, p.ko) >= 0.85); })[0];
+      if (ex) { ex.wish = wi + 1; ex.wishEv = p.wishEv; return; }
+      p.id = 'P' + (++n); p.wish = wi + 1; pool.list.push(p); pool.map[p.id] = p;
+    });
+  });
+  pool.wishes = found.map(function(f){ return { w: f.wp.w, n: f.list.length, full: f.list.filter(function(p){ return p.wishEv.full; }).length, coastal: f.coastal }; });
+  return pool;
+}
+function wishRules(pool){
+  if (!pool || !pool.wishes || !pool.wishes.length) return '';
+  return '\n\n여행자가 꼭 원하는 것(가장 중요한 조건):\n' + pool.wishes.map(function(w, i){ return (i + 1) + ') ' + w.w + ' — 후보 ' + w.n + '곳(완전 일치 ' + w.full + '곳)' + (w.coastal === false ? ' · 이 도시는 바다와 멀어 오션뷰가 어려움' : ''); }).join('\n') +
+    '\n후보 목록의 "요청N" 표시와 근거(✓ 맞음, △ 애매, ✗ 아님)를 봐. 요청마다 완전 일치(모든 항목 ✓) 후보를 최우선으로 어울리는 시간대(바는 저녁)에 넣고, 그 일정의 wish에 요청 번호를 적어. 완전 일치가 없으면 가장 가까운 후보를 넣되 why에 무엇이 다른지 솔직히 적어(예: "재즈바지만 바다는 600m 떨어짐"). 맞는 후보가 하나도 없으면 다른 곳으로 몰래 바꿔 넣지 말고 그 요청은 비워 두고 tips에 "○○는 지도 데이터에서 찾지 못했어요"라고 적어.';
+}
+// the traveller asked for it explicitly: if a fully matching place exists, use it (swap a partial pick, or add it in the evening)
+function enforceWishes(days, pool){
+  if (!pool || !pool.wishes || !pool.wishes.length) return days;
+  var used = {}; days.forEach(function(d){ d.items.forEach(function(it){ used[vNorm(it.q || vParts(it).loc || vParts(it).ko)] = 1; }); });
+  pool.wishes.forEach(function(w, wi){
+    var n = wi + 1, full = pool.list.filter(function(p){ return p.wish === n && p.wishEv && p.wishEv.full && !used[vNorm(p.name)]; });
+    var mine = []; days.forEach(function(d, di){ d.items.forEach(function(it, ii){ if (num(it.wish) === n) mine.push({ di: di, ii: ii, it: it }); }); });
+    if (mine.some(function(m){ return m.it.wev && m.it.wev.full; }) || !full.length) return;
+    var p = full[0], slot = mine[0], it;
+    if (slot) { it = slot.it; it.why = '요청에 더 맞는 곳으로 바꿨어요'; }
+    else {
+      var di = 0, least = 99; days.forEach(function(d, k){ var c = d.items.length + (k === 0 || k === days.length - 1 ? 1.5 : 0); if (c < least) { least = c; di = k; } });
+      it = { time: wishCat(wishParts(w.w)) === '바' ? '20:30' : '16:00', type: p.cat, note: '', why: '꼭 원하신 곳이라 넣었어요' }; days[di].items.push(it);
+      days[di].items.sort(function(a, b){ return String(a.time).localeCompare(String(b.time)); });
+    }
+    it.name = p.ko && p.ko !== p.name ? p.ko + ' (' + p.name + ')' : p.name; it.q = p.name; it.type = p.cat; it.wish = n; it.wev = { full: true, text: p.wishEv.text }; delete it.v;
+    if (p.lat != null && p.src !== 'wv') it.v = cleanV({ s: 'ok', k: vKey(it), n: p.name, lat: p.lat, lon: p.lon, u: p.u, src: p.src });
+    used[vNorm(p.name)] = 1;
+  });
+  return days;
+}
+// after planning: report per wish whether the trip really has it
+function wishReport(t, pool){
+  var ws = wishList(t.conditions).filter(function(wp){ return !wp.stay && (wp.types.length || wp.views.length); });
+  if (!ws.length) { delete t.wishes; return; }
+  var rows = ws.map(function(wp, i){
+    var best = null;
+    t.days.forEach(function(d, di){ d.items.forEach(function(it){
+      if (!it.wish || num(it.wish) !== i + 1) return;
+      var full = !!(it.wev && it.wev.full), sc = full ? 2 : 1; if (!best || sc > best.sc) best = { sc: sc, day: di, name: it.name, ev: it.wev ? it.wev.text : 'AI가 고른 곳 · 지도 근거 없음', full: full };
+    }); });
+    return { w: wp.w, st: best ? (best.full ? 'ok' : 'part') : 'none', day: best ? best.day : -1, name: best ? best.name : '', ev: best ? best.ev : '', n: pool && pool.wishes && pool.wishes[i] ? pool.wishes[i].n : null };
+  });
+  t.wishes = rows;
+}
+
 // one place found by several sources is more trustworthy: merge and boost it
 var SRC_RANK = { google: 4, kakao: 4, tour: 3, osm: 2, wv: 1 };
+// places Google users rated badly (or closed) are removed even if another source lists them
+function dropLow(list, low){
+  low = arr(low); if (!low.length) return list;
+  return list.filter(function(p){ return !low.some(function(b){ var near = p.lat != null && b.lat != null ? distKm([p.lat, p.lon], [b.lat, b.lon]) <= 0.4 : true; return near && (vSim(p.name, b.name) >= 0.8 || (p.ko && vSim(p.ko, b.name) >= 0.8)); }); });
+}
+// review score that does not overrate places with few reviews
+function ratingScore(info){ var m = String(info || '').match(/★(\d\.\d) \(([\d.]+)(천|만)?\)/); if (!m) return null; var n = parseFloat(m[2]) * (m[3] === '만' ? 10000 : m[3] === '천' ? 1000 : 1), r = parseFloat(m[1]); return { r: r, n: n, bayes: (r * n + 4.1 * 150) / (n + 150) }; }
 var HANGUL = /[가-힣]/;
 function mergePools(lists){
   var out = [];
@@ -2816,6 +3296,8 @@ function mergePools(lists){
     // keep a local/English name as the main name and a Korean one beside it
     if (HANGUL.test(hit.name) && p.name && !HANGUL.test(p.name)) { hit.ko = hit.ko || hit.name; hit.name = p.name; }
     if (!hit.ko) hit.ko = p.ko || (HANGUL.test(p.name) ? p.name : '');
+    if (p.rating && !hit.rating) hit.rating = p.rating;
+    if (p.gid && !hit.gid) hit.gid = p.gid;
     if (p.info) {
       var add = p.info; if (/(^| · )(저렴|보통|고급)( · |$)/.test(hit.info || '')) add = add.replace(/(^| · )(저렴|보통|고급)(?= · |$)/g, '');
       add = add.replace(/^ · /, '');
@@ -2827,6 +3309,7 @@ function mergePools(lists){
   return out;
 }
 function pickPool(list, pref, src){
+  list.forEach(function(p){ var rs = ratingScore(p.info); if (rs && !p._rated) { p.sc += (rs.bayes - 4.1) * 14 + Math.log10(rs.n + 1); p._rated = 1; } });
   var by = {}; list.forEach(function(p){ (by[p.cat] = by[p.cat] || []).push(p); });
   var out = []; Object.keys(by).forEach(function(c){ out = out.concat(by[c].sort(function(a, b){ return b.sc - a.sc; }).slice(0, pref.quota[c] || 10)); });
   out.forEach(function(p){ if (!p.src) p.src = src; });
@@ -2840,10 +3323,14 @@ function poolFor(place, rec){
   if (POOLS[key]) return POOLS[key];
   var p = POOLS[key] = cityCenter(place, rec).then(function(ll){
     var srv = window.MT_POOL;
-    if (dom) return (srv ? srv(place, ll, pref.kw).catch(function(){ return osmPool(ll, pref, dom); }) : osmPool(ll, pref, dom)).then(function(raw){ var pl = pickPool(raw.list, pref, raw.src); if (pl) { pl.ll = ll; pl.dom = dom; } return pl; });
     var none = function(){ return { list: [] }; }, g = window.MT_GPOOL;
-    return Promise.all([osmPool(ll, pref, dom).catch(none), wvPool(place, ll, pref).catch(none), g ? g(place, ll, pref.kw).catch(none) : none()]).then(function(rs){
-      var pl = pickPool(mergePools([rs[2].list, rs[0].list, rs[1].list]), pref, 'osm'); if (pl) { pl.ll = ll; pl.dom = dom; } return pl;
+    var gp = g ? g(place, ll, pref.kw).catch(none) : Promise.resolve(none());
+    if (dom) return Promise.all([srv ? srv(place, ll, pref.kw).catch(function(){ return osmPool(ll, pref, dom); }) : osmPool(ll, pref, dom), gp]).then(function(rs){
+      // Kakao keeps the Korean names and links; Google adds ratings and drops badly rated places
+      var pl = pickPool(dropLow(mergePools([rs[0].list, rs[1].list]), rs[1].low), pref, rs[0].src); if (pl) { pl.ll = ll; pl.dom = dom; } return pl;
+    });
+    return Promise.all([osmPool(ll, pref, dom).catch(none), wvPool(place, ll, pref).catch(none), gp]).then(function(rs){
+      var pl = pickPool(dropLow(mergePools([rs[2].list, rs[0].list, rs[1].list]), rs[2].low), pref, 'osm'); if (pl) { pl.ll = ll; pl.dom = dom; } return pl;
     });
   }).catch(function(){ delete POOLS[key]; return null; });
   return p;
@@ -2851,16 +3338,22 @@ function poolFor(place, rec){
 function poolWait(place, rec, ms){
   C.poolMsg = isDom(rec) || (!rec && isDomScope(C.cond.scope)) ? '지도에서 실제로 영업 중인 장소를 모으는 중' : '지도에서 실제 장소를 모으는 중';
   if (C.busy) softRender();
-  return Promise.race([poolFor(place, rec), new Promise(function(ok){ setTimeout(function(){ ok(null); }, ms); })]).then(function(p){ C.poolMsg = ''; return p; });
+  var cond = (rec && rec.conditions) || C.cond, dom = isDom(rec) || (!rec && isDomScope(C.cond.scope));
+  var withW = poolFor(place, rec).then(function(pool){
+    if (!pool || !wishList(cond).some(function(w){ return !w.stay; })) return pool;
+    C.poolMsg = '꼭 원하는 곳을 지도에서 따로 찾는 중'; if (C.busy) softRender();
+    return wishesFor(place, pool.ll, dom, cond, false).then(function(f){ return addWishes(pool, f); });
+  });
+  return Promise.race([withW, new Promise(function(ok){ setTimeout(function(){ ok(null); }, ms + 8000); })]).then(function(p){ C.poolMsg = ''; return p; });
 }
 function poolText(pool, mode, keep){
   if (!pool) return '';
   var list = keep ? pool.list.filter(keep) : pool.list;
   if (mode === 'course') return '\n\n이 도시의 실제 장소 일부(지도 데이터): ' + list.slice(0, 60).map(function(p){ return p.ko || p.name; }).join(', ') + '\nhighlights는 가능하면 이 목록에 있는 실제 장소로 적어.';
   var SN = { kakao: '카카오맵', osm: 'OpenStreetMap', wv: '위키보이지(여행자 추천)', google: 'Google 지도 평점' };
-  return '\n\n아래는 ' + (pool.srcs || [pool.src]).map(function(x){ return SN[x] || x; }).join(' · ') + '에서 가져온 실제 장소 후보야. 형식: 번호|종류|이름|한국어 이름|세부|도심에서 거리|정보(평점·가격대·소개)\n' +
-    list.map(function(p){ return p.id + '|' + p.cat + '|' + p.name + '|' + (p.ko || '') + '|' + (p.sub || '') + '|' + (p.d == null ? '?' : p.d + 'km') + '|' + (p.info || ''); }).join('\n') +
-    '\n\n규칙: 명소·맛집·카페·쇼핑·체험 일정은 이 후보 중에서 여행자 조건(취향·스타일·동행·예산)에 가장 잘 맞는 곳을 골라. 맛집은 평점과 리뷰 수가 높고, 가격대가 예산에 맞고, 소개가 취향과 맞는 곳을 우선하고, 끼니마다 다른 음식 종류로 골고루. 여러 출처에 함께 나온 곳(정보가 풍부한 곳)이 더 믿을 만해. 고른 곳은 pid에 번호를 적고, name은 "한국어 이름 (후보의 이름)"으로 써. 같은 날 일정은 서로 가까운 곳끼리 묶어. 후보에 맞는 곳이 정말 없을 때만 후보 밖의, 지금도 영업 중인 게 확실한 유명한 곳을 쓰고 pid는 빈 문자열로 둬. 후보 이름을 바꾸거나 지어내지 마. why에는 그 장소가 이 여행자 조건의 어느 부분과 맞는지 짧게 적어(예: "미식 취향 · 현지인 노포").';
+  return '\n\n아래는 ' + (pool.srcs || [pool.src]).map(function(x){ return SN[x] || x; }).join(' · ') + '에서 가져온 실제 장소 후보야. 형식: 번호|종류|이름|한국어 이름|세부|도심에서 거리 @위도,경도|정보(평점·가격대·소개)\n' +
+    list.map(function(p){ return p.id + '|' + p.cat + '|' + p.name + '|' + (p.ko || '') + '|' + (p.sub || '') + '|' + (p.d == null ? '?' : p.d + 'km') + (p.lat != null ? ' @' + (+p.lat).toFixed(3) + ',' + (+p.lon).toFixed(3) : '') + '|' + (p.info || '') + (p.wish ? ' · [요청' + p.wish + ': ' + p.wishEv.text + ']' : ''); }).join('\n') +
+    wishRules(pool) + '\n\n규칙: 명소·맛집·카페·바·쇼핑·체험 일정은 이 후보 중에서 여행자 조건(취향·스타일·동행·예산)에 가장 잘 맞는 곳을 골라. 평점(★)과 리뷰 수가 정보에 있으면 그게 가장 중요한 근거야: 같은 조건이면 ★4.5 이상·리뷰 많은 곳을 먼저, ★4.2 미만이거나 리뷰 수십 개뿐인 곳은 조건에 꼭 맞을 때만. 맛집은 가격대가 예산에 맞고 소개가 취향과 맞는 곳을, 끼니마다 다른 음식 종류로 골고루. 여러 출처에 함께 나온 곳(정보가 풍부한 곳)이 더 믿을 만해. 고른 곳은 pid에 번호를 적고, name은 "한국어 이름 (후보의 이름)"으로 써. 같은 날 일정은 좌표가 가까운 곳끼리 묶고(하루 이동이 짧게, 같은 동네를 오가지 않게), 순서는 지그재그 없이 한 방향으로 이어지게 해. 후보에 맞는 곳이 정말 없을 때만 후보 밖의, 지금도 영업 중인 게 확실한 유명한 곳을 쓰고 pid는 빈 문자열로 둬. 후보 이름을 바꾸거나 지어내지 마. why에는 그 장소가 이 여행자 조건의 어느 부분과 맞는지 짧게 적어(예: "미식 취향 · 현지인 노포").';
 }
 // attach real map data to stops the AI picked from the pool; fixes names, types and wrong picks
 function applyPool(days, pool){
@@ -2876,10 +3369,11 @@ function applyPool(days, pool){
     if (!p) return;
     var ko = p.ko || (pool.dom ? p.name : parts.ko) || p.name;
     it.name = pool.dom ? p.name : (vNorm(ko) === vNorm(p.name) ? p.name : ko + ' (' + p.name + ')');
-    it.q = p.name; if (p.rating && !it.note) it.note = p.rating;
-    if (['명소', '맛집', '카페', '쇼핑', '체험'].indexOf(it.type) >= 0 && it.type !== p.cat && !(it.type === '체험' && p.cat === '명소')) it.type = p.cat;
+    it.q = p.name; if (p.rating) it.rt = String(p.rating).replace(/^Google /, ''); if (p.lat != null) it.ll = [+(+p.lat).toFixed(5), +(+p.lon).toFixed(5)];
+    if (p.wish && p.wishEv) { it.wish = it.wish || p.wish; if (num(it.wish) === p.wish) it.wev = { full: p.wishEv.full, text: p.wishEv.text }; } else if (it.wish && !p.wish) { it.wev = { full: false, text: '요청 검색 결과 밖의 장소 · 근거 확인 안 됨' }; }
+    if (['명소', '맛집', '카페', '쇼핑', '체험', '바'].indexOf(it.type) >= 0 && it.type !== p.cat && !(it.type === '체험' && p.cat === '명소')) it.type = p.cat;
     var live = p.src === 'kakao' || p.src === 'google' || (p.src === 'osm' && !gKey);
-    if (live && p.lat != null) it.v = cleanV({ s: 'ok', k: vKey(it), n: p.name, lat: p.lat, lon: p.lon, u: p.u, src: p.src });
+    if (live && p.lat != null) it.v = cleanV({ s: 'ok', k: vKey(it), n: p.name, lat: p.lat, lon: p.lon, u: p.u, src: p.src, gid: p.gid });
   }); });
   return days;
 }
@@ -2896,11 +3390,11 @@ function officialName(it, dom){
 var VC = { run: null, fail: false, src: '' };
 var V_SKIP = /^(이동|숙소|휴식)$/;
 var V_GENERIC = /(현지|근처|주변|일대|자유|아무|숙소|호텔 ?(체크|휴식)|체크인|체크아웃|공항|출발|도착|귀가|이동|산책로? ?걷기|시내 ?구경|야경 ?감상|휴식)/;
-function cleanV(v){ if (!v || typeof v !== 'object' || ['ok', 'no', 'me', 'closed'].indexOf(v.s) < 0) return null; var o = { s: v.s, k: String(v.k || '').slice(0, 120) }; if (v.n) o.n = String(v.n).slice(0, 80); if (isFinite(parseFloat(v.lat)) && isFinite(parseFloat(v.lon))) { o.lat = +(+v.lat).toFixed(5); o.lon = +(+v.lon).toFixed(5); } if (v.u && /^https:\/\/(place\.map\.kakao\.com|www\.openstreetmap\.org|maps\.google\.com|www\.google\.com\/maps)\//.test(v.u)) o.u = String(v.u); if (v.src) o.src = ['kakao', 'google'].indexOf(v.src) >= 0 ? v.src : 'osm'; if (v.t === 'temp') o.t = 'temp'; if (v.was === 'closed') o.was = 'closed'; return o; }
+function cleanV(v){ if (!v || typeof v !== 'object' || ['ok', 'no', 'me', 'closed'].indexOf(v.s) < 0) return null; var o = { s: v.s, k: String(v.k || '').slice(0, 120) }; if (v.n) o.n = String(v.n).slice(0, 80); if (isFinite(parseFloat(v.lat)) && isFinite(parseFloat(v.lon))) { o.lat = +(+v.lat).toFixed(5); o.lon = +(+v.lon).toFixed(5); } if (v.u && /^https:\/\/(place\.map\.kakao\.com|www\.openstreetmap\.org|maps\.google\.com|www\.google\.com\/maps)\//.test(v.u)) o.u = String(v.u); if (v.src) o.src = ['kakao', 'google'].indexOf(v.src) >= 0 ? v.src : 'osm'; if (v.t === 'temp') o.t = 'temp'; if (v.gid && /^[A-Za-z0-9_-]{10,}$/.test(v.gid)) o.gid = String(v.gid); if (v.was === 'closed') o.was = 'closed'; return o; }
 function vParts(it){ var n = String(it.name || '').trim().replace(/^(체크인|체크아웃|숙소) · /, ''), m = n.match(/^(.*?)\s*[(（]([^()（）]+)[)）]\s*$/); return { ko: (m ? m[1] : n).trim(), loc: m ? m[2].trim() : '' }; }
 function vKey(it){ return (String(it.q || '') + '|' + String(it.name || '')).trim().toLowerCase(); }
 function vWanted(it){ if (it.ev) return false; if (V_SKIP.test(String(it.type || '')) && !(it.type === '숙소' && /^(체크인|체크아웃|숙소) · /.test(String(it.name || '')))) return false; var p = vParts(it); if (!it.q && !p.loc && V_GENERIC.test(p.ko)) return false; return (it.q || p.loc || p.ko).length >= 2; }
-function keepChecks(days, old){ var map = {}; old.forEach(function(d){ d.items.forEach(function(it){ if (it.v) map[vKey(it)] = it; }); }); days.forEach(function(d){ d.items.forEach(function(it){ var o = map[vKey(it)]; if (o && !it.v) it.v = o.v; if (o && o.done) it.done = true; }); }); return days; }
+function keepChecks(days, old){ var map = {}; old.forEach(function(d){ d.items.forEach(function(it){ if (it.v || it.ll) map[vKey(it)] = it; }); }); days.forEach(function(d){ d.items.forEach(function(it){ var o = map[vKey(it)]; if (o && !it.v) it.v = o.v; if (o && o.done) it.done = true; if (o && o.ll && !it.ll) it.ll = o.ll; if (o && o.rt && !it.rt) it.rt = o.rt; }); }); return days; }
 function vNorm(x){ return String(x || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[\s·・\-–_'’".,()（）\[\]&/!?:;]+/g, ''); }
 function vSim(a, b){
   a = vNorm(a); b = vNorm(b); if (!a || !b) return 0; if (a === b) return 1;
@@ -2934,7 +3428,7 @@ function checkOne(it, ll, dom){
   }
   function step(i){
     if (i >= qs.length || (best && best.sc >= 0.6)) {
-      var ok = best && best.sc >= 0.6, v = ok ? { s: best.open ? 'ok' : 'closed', t: best.c.status === 'CLOSED_TEMPORARILY' ? 'temp' : '', n: best.c.name, lat: best.c.lat, lon: best.c.lon, u: best.c.u, src: best.src } : { s: 'no', src: best ? best.src : VC.src || 'osm' };
+      var ok = best && best.sc >= 0.6, v = ok ? { s: best.open ? 'ok' : 'closed', t: best.c.status === 'CLOSED_TEMPORARILY' ? 'temp' : '', n: best.c.name, lat: best.c.lat, lon: best.c.lon, u: best.c.u, src: best.src, gid: best.c.id } : { s: 'no', src: best ? best.src : VC.src || 'osm' };
       v = cleanV(Object.assign(v, { k: vKey(it) })); vCacheSet(ck, v); return v;
     }
     return placeSearch(qs[i], ll, dom).then(function(res){ VC.src = res.src; judge(res); return step(i + 1); });
@@ -2983,6 +3477,50 @@ function itemMap(it){
   if (isDom(T)) return 'https://map.kakao.com/link/search/' + encodeURIComponent((it.v && it.v.s === 'ok' && it.v.n) || it.q || vParts(it).ko);
   if (it.v && it.v.s === 'ok' && it.v.n) return mapsUrl(it.v.n + ' ' + T.city);
   return mapsUrl((it.q || it.name) + ' ' + T.city);
+}
+
+function condWishLine(t){ var ws = wishList(t.conditions).filter(function(w){ return !w.stay; }); return ws.length ? '\n여행자가 꼭 원하는 것: ' + ws.map(function(w, i){ return (i + 1) + ') ' + w.w; }).join(' / ') + ' (일정의 wish 번호는 이 번호)' : ''; }
+function wishCardHtml(){
+  if (!T || T.example || !T.wishes || !T.wishes.length) return '';
+  var I = { ok: ['✓', '반영됨', 'fbadge'], part: ['△', '일부만 맞아요', 'vbadge no'], none: ['✗', '못 찾았어요', 'vbadge closed'] };
+  return '<h4 style="margin-top:18px">꼭 원하는 곳</h4><ul class="xlist" style="margin-top:4px">' + T.wishes.map(function(w, i){
+    var s = I[w.st] || I.none;
+    return '<li><div class="t"><span class="' + s[2] + '">' + s[0] + ' ' + s[1] + '</span><b>' + esc(w.w) + '</b></div>' +
+      (w.name ? '<span class="meta">DAY ' + (w.day + 1) + ' · ' + esc(w.name) + '</span>' : '') + (w.ev ? '<span class="meta">근거 · ' + esc(w.ev) + '</span>' : '') +
+      (w.st !== 'ok' && !demoMode ? '<div class="acts2"><button type="button" class="chipbtn" data-wishfix="' + i + '"' + (refineCtl ? ' disabled' : '') + '>맞는 곳 다시 찾기</button><a class="chipbtn" href="' + (isDom(T) ? 'https://map.kakao.com/link/search/' + encodeURIComponent(T.city + ' ' + w.w) : mapsUrl(w.w + ' ' + T.city)) + '" target="_blank" rel="noopener">지도에서 직접 보기</a></div>' : '') + '</li>';
+  }).join('') + '</ul>';
+}
+// find a place for one wish and put it into the best day
+$('fitCard').addEventListener('click', function(e){ var b = e.target.closest('[data-wishfix]'); if (b) fixWish(+b.getAttribute('data-wishfix')); });
+function fixWish(i){
+  if (!T || demoMode || refineCtl) return;
+  if (aiMode() === 'none') { toast(ERR.no_ai); return; }
+  var w = T.wishes && T.wishes[i]; if (!w) return;
+  var wp = wishParts(w.w), tgt = T, msg = $('refineMsg');
+  refineCtl = new AbortController(); var myCtl = refineCtl;
+  $('refineBtn').disabled = true; $('refineStop').hidden = false; msg.className = 'msg'; msg.textContent = '"' + w.w + '"에 맞는 곳을 지도에서 찾는 중…'; renderTrip();
+  Object.keys(WSC).forEach(function(k){ if (k.indexOf('|' + w.w) > 0) delete WSC[k]; });
+  cityCenter(T.city, T).then(function(ll){ return wishSearch(T.city, ll, isDom(T), wp); }).then(function(f){
+    if (myCtl.signal.aborted) throw { code: 'cancelled' };
+    if (!f.list.length) throw { code: 'nowish', coastal: f.coastal };
+    var cands = f.list.map(function(p, k){ return 'W' + (k + 1) + '|' + p.cat + '|' + p.name + '|' + (p.ko || '') + '|' + (p.sub || '') + '|' + (p.wishEv ? p.wishEv.text : '') + '|' + (p.info || ''); });
+    var prompt = '너는 여행 큐레이터야. 여행지: ' + T.city + '. 여행자가 꼭 원하는 것: "' + w.w + '"\n지금 일정: ' + T.days.map(function(d, di){ return (di + 1) + '일차(' + d.title + '): ' + d.items.map(function(it){ return (it.time || '') + ' ' + vParts(it).ko; }).join(', '); }).join(' / ') +
+      '\n\n지도 데이터에서 찾은 후보(근거: ✓ 맞음, △ 애매, ✗ 아님):\n' + cands.join('\n') +
+      '\n\n요청에 가장 잘 맞는 후보 하나를 골라(✓가 많은 곳 우선), 동선과 시간대가 맞는 날(바는 저녁)에 넣을 시간을 정해. 완전히 맞지 않으면 why에 무엇이 다른지 솔직히 적어. JSON 하나로만 답해: {"pick":"W1","day":1,"time":"20:00","why":"","note":""}';
+    return aiJson(prompt, myCtl.signal).then(function(d){
+      if (T !== tgt) return;
+      var k = num(String((d && d.pick) || '').replace(/\D/g, '')) - 1, p = f.list[k] || f.list[0], day = Math.max(0, Math.min(T.days.length - 1, num(d && d.day) - 1));
+      var item = { time: /^\d{1,2}:\d{2}$/.test(String(d && d.time)) ? String(d.time) : '20:00', name: p.ko && p.ko !== p.name ? p.ko + ' (' + p.name + ')' : p.name, q: p.name, type: p.cat, wish: i + 1, wev: { full: p.wishEv.full, text: p.wishEv.text }, why: String((d && d.why) || '').slice(0, 60), note: String((d && d.note) || '').slice(0, 120) };
+      if (p.lat != null && p.src !== 'wv') item.v = cleanV({ s: 'ok', k: '', n: p.name, lat: p.lat, lon: p.lon, u: p.u, src: p.src });
+      T.days.forEach(function(dd){ dd.items = dd.items.filter(function(x){ return num(x.wish) !== i + 1; }); });
+      T.days[day].items.push(item); if (item.v) item.v.k = vKey(item);
+      T.days[day].items.sort(function(a, b){ return String(a.time).localeCompare(String(b.time)); });
+      wishReport(T, null); curDay = day; msg.textContent = '"' + w.w + '"' + (p.wishEv.full ? '에 맞는 곳을' : '에 가장 가까운 곳을') + ' DAY ' + (day + 1) + '에 넣었어요.'; touch();
+    });
+  }).catch(function(e){
+    if (e && e.code === 'cancelled') { msg.textContent = '찾기를 멈췄어요.'; return; }
+    msg.className = 'msg err'; msg.textContent = e && e.code === 'nowish' ? '"' + w.w + '"에 맞는 곳을 지도 데이터에서 찾지 못했어요' + (e.coastal === false ? ' (이 도시는 바다와 떨어져 있어요)' : '') + '. "지도에서 직접 보기"로 확인해 보세요.' : errText(e);
+  }).then(function(){ if (refineCtl === myCtl) { refineCtl = null; $('refineBtn').disabled = demoMode; $('refineStop').hidden = true; if (T) renderTrip(); } });
 }
 function fixPlaces(){
   if (!T || demoMode || refineCtl) return;

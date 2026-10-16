@@ -2,7 +2,7 @@
 //   GET /api/place?q=..&lat=..&lon=..&dom=1       → find one place (to check that a stop exists / is open)
 //       Korea + KAKAO_REST_API_KEY → Kakao Local; otherwise GOOGLE_PLACES_API_KEY → Google Places (also says if it closed)
 //   GET /api/place?pool=1&city=..&lat=..&lon=..&kw=a,b → Korean candidate places from Kakao Local, before the AI plans
-const { whoIs } = require('./ai.js');
+const { whoIs, isAllowed } = require('./ai.js');
 
 const cache = new Map(); // key -> { at, body }
 const DAY = 864e5;
@@ -34,6 +34,7 @@ const kItem = d => ({ id: d.id, name: d.place_name, lat: +d.y, lon: +d.x, u: Str
 function kCat(p) {
   const c = p.cat;
   if (p.code === 'CE7' || /카페|디저트|베이커리|제과/.test(c)) return '카페';
+  if (/술집|바$|> 바 |와인바|칵테일바|재즈바|LP바|펍|호프|이자카야/.test(c)) return '바';
   if (p.code === 'FD6' || /^음식점/.test(c)) return '맛집';
   if (/시장|쇼핑|백화점|아울렛|쇼핑몰/.test(c)) return '쇼핑';
   if (/테마파크|놀이|체험|레저|아쿠아|동물원|수목원|워터파크|스포츠/.test(c)) return '체험';
@@ -66,8 +67,8 @@ async function kakaoPool(key, city, ll, kws) {
 }
 
 // ---------- Google Places (New): only Pro fields (5,000 free requests a month) ----------
-async function google(key, q, ll) {
-  const body = { textQuery: q, languageCode: 'ko', pageSize: 5 };
+async function google(key, q, ll, size) {
+  const body = { textQuery: q, languageCode: 'ko', pageSize: Math.max(1, Math.min(20, size || 5)) };
   if (ll) body.locationBias = { circle: { center: { latitude: ll[0], longitude: ll[1] }, radius: 50000 } };
   const r = await fetch('https://places.googleapis.com/v1/places:searchText', {
     method: 'POST',
@@ -77,7 +78,7 @@ async function google(key, q, ll) {
   if (r.status === 401 || r.status === 403) { const e = new Error('google key'); e.code = 'bad_key'; throw e; }
   if (!r.ok) { const e = new Error('google ' + r.status); e.code = 'upstream_error'; throw e; }
   const j = await r.json();
-  return { src: 'google', items: (j.places || []).map(p => ({ name: (p.displayName || {}).text || '', lat: (p.location || {}).latitude, lon: (p.location || {}).longitude, u: p.googleMapsUri || '', status: p.businessStatus || 'OPERATIONAL', type: p.primaryType || '' })).filter(x => x.name && isFinite(x.lat)) };
+  return { src: 'google', items: (j.places || []).map(p => ({ id: p.id || '', name: (p.displayName || {}).text || '', lat: (p.location || {}).latitude, lon: (p.location || {}).longitude, u: p.googleMapsUri || '', status: p.businessStatus || 'OPERATIONAL', type: p.primaryType || '' })).filter(x => x.name && isFinite(x.lat)) };
 }
 
 // Google Places restaurants/cafes with ratings for trips abroad. Uses Enterprise fields
@@ -92,7 +93,7 @@ function gCat(t) {
   return '명소';
 }
 async function googlePool(key, city, ll, kws) {
-  const qs = [city + ' 맛집', city + ' 현지 맛집', city + ' 카페'].concat(kws.filter(k => !/맛집|카페/.test(k)).slice(0, 2).map(k => city + ' ' + k + ' 맛집'));
+  const qs = [city + ' 맛집', city + ' 현지 맛집', city + ' 카페', city + ' 가볼만한 곳'].concat(kws.filter(k => !/맛집|카페/.test(k)).slice(0, 2).map(k => city + ' ' + k + ' 맛집'));
   const mask = 'places.id,places.displayName,places.location,places.businessStatus,places.googleMapsUri,places.primaryType,places.rating,places.userRatingCount,places.priceLevel';
   const runs = await Promise.all(qs.map(q => fetch('https://places.googleapis.com/v1/places:searchText', {
     method: 'POST',
@@ -102,10 +103,11 @@ async function googlePool(key, city, ll, kws) {
     if (r.status === 401 || r.status === 403) { const e = new Error('google key'); e.code = 'bad_key'; throw e; }
     return r.ok ? ((await r.json()).places || []) : [];
   }, () => [])));
-  const seen = new Map();
+  const seen = new Map(), low = [];
   runs.forEach(list => list.forEach((p, i) => {
-    if (p.businessStatus && p.businessStatus !== 'OPERATIONAL') return;
-    const n = +p.userRatingCount || 0, rt = +p.rating || 0;
+    const n = +p.userRatingCount || 0, rt = +p.rating || 0, nm = (p.displayName || {}).text || '';
+    const bad = (p.businessStatus && p.businessStatus !== 'OPERATIONAL') || (n >= 30 && rt && rt < 3.9);
+    if (bad && p.location) { low.push({ name: nm, lat: p.location.latitude, lon: p.location.longitude }); return; }
     if (!p.location || (n && rt && (rt < 4.0 || n < 30))) return;
     const d = distKm(ll, [p.location.latitude, p.location.longitude]); if (d > 20) return;
     const bayes = n ? (rt * n + 4.1 * 150) / (n + 150) : 4.0; // fewer reviews → pulled toward average
@@ -114,9 +116,9 @@ async function googlePool(key, city, ll, kws) {
     if (prev) { prev.sc += 1; return; }
     const cnt = n >= 10000 ? (n / 10000).toFixed(1) + '만' : n >= 1000 ? (n / 1000).toFixed(1) + '천' : String(n);
     const rating = rt ? '★' + rt.toFixed(1) + ' (' + cnt + ')' : '';
-    seen.set(p.id, { name: (p.displayName || {}).text || '', ko: '', cat: gCat(p.primaryType), sub: String(p.primaryType || '').replace(/_/g, ' '), d, lat: p.location.latitude, lon: p.location.longitude, u: p.googleMapsUri || '', src: 'google', sc, rating: rating ? 'Google ' + rating : '', info: [rating, PRICE[p.priceLevel] || ''].filter(Boolean).join(' · ') });
+    seen.set(p.id, { gid: p.id, name: (p.displayName || {}).text || '', ko: '', cat: gCat(p.primaryType), sub: String(p.primaryType || '').replace(/_/g, ' '), d, lat: p.location.latitude, lon: p.location.longitude, u: p.googleMapsUri || '', src: 'google', sc, rating: rating ? 'Google ' + rating : '', info: [rating, PRICE[p.priceLevel] || ''].filter(Boolean).join(' · ') });
   }));
-  return { src: 'google', list: [...seen.values()].filter(x => x.name) };
+  return { src: 'google', list: [...seen.values()].filter(x => x.name), low };
 }
 
 // ---------- 한국관광공사 TourAPI (KorService2): official festivals and registered lodging ----------
@@ -163,7 +165,7 @@ async function kakaoStays(key, city, ll, types) {
     p.sc += (k >= 3 ? 1.5 : 1) * (1 - i / 20);
     by.set(d.id, p);
   }));
-  return [...by.values()].map(p => {
+  return [...by.values()].filter(p => p.code === 'AD5' || /숙박/.test(p.cat)).map(p => {
     const sub = p.cat.split('>').map(s => s.trim()).filter(Boolean);
     const kind = sub[2] || sub[1] || '숙소';
     return { name: p.name, ko: '', cat: /모텔/.test(kind) ? '모텔' : kind.replace(/^숙박$/, '숙소'), sub: sub.slice(-1)[0] || '', lat: p.lat, lon: p.lon, u: p.u, src: 'kakao', sc: p.sc, info: sub.slice(2).join(' · ') };
@@ -209,6 +211,38 @@ async function ticketmaster(key, ll, from, to) {
   return [...by.values()].slice(0, 25);
 }
 
+// ---------- opening hours of one Google place (Place Details, Enterprise field: 1,000 free a month) ----------
+async function googleHours(key, id) {
+  const r = await fetch('https://places.googleapis.com/v1/places/' + encodeURIComponent(id) + '?languageCode=ko', { headers: { 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': 'regularOpeningHours' } });
+  if (r.status === 401 || r.status === 403) { const e = new Error('google key'); e.code = 'bad_key'; throw e; }
+  if (!r.ok) { const e = new Error('google ' + r.status); e.code = 'upstream_error'; throw e; }
+  const h = (await r.json()).regularOpeningHours || {};
+  const pt = x => x ? [x.day, (x.hour || 0) * 60 + (x.minute || 0)] : null;
+  return { periods: (h.periods || []).map(p => ({ o: pt(p.open), c: pt(p.close) })), text: h.weekdayDescriptions || [] };
+}
+// ---------- 외교부 국가·지역별 여행경보 (data.go.kr, same key as TourAPI) ----------
+let ALERTS = null;
+async function travelAlerts(key) {
+  if (ALERTS && Date.now() - ALERTS.at < DAY / 2) return ALERTS.map;
+  const u = 'https://apis.data.go.kr/1262000/TravelAlarmService2/getTravelAlarmList2?serviceKey=' + tourKey(key) + '&returnType=JSON&numOfRows=500&pageNo=1';
+  const r = await fetch(u); const text = await r.text();
+  let j; try { j = JSON.parse(text); } catch (e) { const er = new Error('alert ' + r.status); er.code = /SERVICE_KEY|NOT_REGISTERED|UNREGISTERED/i.test(text) ? 'bad_key' : 'upstream_error'; throw er; }
+  const body = (j.response || {}).body || j;
+  let items = body.data || (body.items && (body.items.item || body.items)) || [];
+  if (!Array.isArray(items)) items = [items];
+  const pick = (o, re) => { for (const k of Object.keys(o)) if (re.test(k)) return o[k]; return undefined; };
+  const map = {};
+  items.forEach(o => {
+    if (!o || typeof o !== 'object') return;
+    const cc = String(pick(o, /iso.*alp2|alp2|iso2/i) || '').toUpperCase(); if (!/^[A-Z]{2}$/.test(cc)) return;
+    const lvl = parseInt(pick(o, /alarm.?lvl|alarmlevel|lvl/i), 10) || 0;
+    const region = String(pick(o, /region|remark|area/i) || '').slice(0, 80);
+    if (!map[cc] || lvl > map[cc].lvl) map[cc] = { lvl, region: lvl ? region : '' };
+  });
+  ALERTS = { at: Date.now(), map };
+  return map;
+}
+
 module.exports = async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'GET') return fail(res, 405, 'method', 'GET only');
@@ -221,13 +255,25 @@ module.exports = async (req, res) => {
   let email;
   try { email = await whoIs(token); } catch (e) { return fail(res, 502, 'network', 'Could not reach Supabase'); }
   if (!email) return fail(res, 401, 'signed_out', 'Session expired');
-  const allowed = String(process.env.ALLOWED_EMAILS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
-  if (!allowed.includes(email)) return fail(res, 403, 'not_allowed', email + ' is not in ALLOWED_EMAILS');
+  if (!isAllowed(email)) return fail(res, 403, 'not_allowed', email + ' is not in ALLOWED_EMAILS');
 
   const q = req.query || {};
   const lat = parseFloat(q.lat), lon = parseFloat(q.lon);
   const ll = isFinite(lat) && isFinite(lon) ? [lat, lon] : null;
   try {
+    if (q.hours) {
+      if (!gKey) return fail(res, 501, 'no_key', 'GOOGLE_PLACES_API_KEY is not set');
+      const id = String(q.id || ''); if (!/^[A-Za-z0-9_-]{10,}$/.test(id)) return fail(res, 400, 'bad_request', 'id required');
+      const ck = 'hours|' + id, hit = cache.get(ck);
+      if (hit && Date.now() - hit.at < 7 * DAY) return res.status(200).json(hit.body);
+      return res.status(200).json(remember(ck, await googleHours(gKey, id)));
+    }
+    if (q.alert) {
+      if (!tKey) return fail(res, 501, 'no_key', 'TOURAPI_KEY is not set');
+      const cc = String(q.cc || '').toUpperCase(); if (!/^[A-Z]{2}$/.test(cc)) return fail(res, 400, 'bad_request', 'cc required');
+      const map = await travelAlerts(tKey);
+      return res.status(200).json(map[cc] || { lvl: 0 });
+    }
     const isoOk = d => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''));
     if (q.fest || q.tm) {
       if (!ll || !isoOk(q.from) || !isoOk(q.to) || q.to < q.from) return fail(res, 400, 'bad_request', 'lat, lon, from, to required');
@@ -278,12 +324,13 @@ module.exports = async (req, res) => {
     const text = String(q.q || '').trim().slice(0, 80);
     if (text.length < 2) return fail(res, 400, 'bad_request', 'q required');
     const useKakao = kKey && (q.dom === '1' || !gKey);
-    const ck = (useKakao ? 'k|' : 'g|') + text + '|' + (ll ? ll[0].toFixed(2) + ',' + ll[1].toFixed(2) : '');
+    const size = Math.max(1, Math.min(15, parseInt(q.size, 10) || 8));
+    const ck = (useKakao ? 'k|' : 'g|') + text + '|' + size + '|' + (ll ? ll[0].toFixed(2) + ',' + ll[1].toFixed(2) : '');
     const hit = cache.get(ck);
     if (hit && Date.now() - hit.at < DAY) return res.status(200).json(hit.body);
     let body;
-    if (useKakao) body = { src: 'kakao', items: (await kakao('keyword', Object.assign({ query: text, size: 8 }, ll ? { x: ll[1], y: ll[0] } : {}), kKey)).map(kItem) };
-    else body = await google(gKey, text, ll);
+    if (useKakao) body = { src: 'kakao', items: (await kakao('keyword', Object.assign({ query: text, size }, ll ? { x: ll[1], y: ll[0] } : {}), kKey)).map(kItem) };
+    else body = await google(gKey, text, ll, size);
     res.status(200).json(remember(ck, body));
   } catch (e) {
     if (e.code === 'bad_key') return fail(res, 502, 'bad_key', 'The map key was rejected');

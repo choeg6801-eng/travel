@@ -115,8 +115,7 @@ module.exports = async (req, res) => {
   if (!email) return fail(res, 401, 'signed_out', 'Session expired');
 
   // Fail closed: with no allow-list nobody can spend the key.
-  const allowed = String(process.env.ALLOWED_EMAILS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
-  if (!allowed.includes(email)) return fail(res, 403, 'not_allowed', email + ' is not in ALLOWED_EMAILS');
+  if (!isAllowed(email)) return fail(res, 403, 'not_allowed', email + ' is not in ALLOWED_EMAILS');
 
   let body = req.body;
   if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { body = null; } }
@@ -199,3 +198,10 @@ module.exports = async (req, res) => {
   if (!res.writableEnded) { res.write(failed ? '\u0000ERR:' + failed : '\u0000END:' + stop); res.end(); }
 };
 module.exports.whoIs = whoIs;
+// ALLOWED_EMAILS: "a@x.com,b@y.com" (exact), "@company.com" (a whole domain) or "*" (everyone who signs in)
+function isAllowed(email) {
+  email = String(email || '').toLowerCase();
+  const list = String(process.env.ALLOWED_EMAILS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+  return list.some(a => a === '*' || a === email || (a.startsWith('@') && email.endsWith(a)));
+}
+module.exports.isAllowed = isAllowed;
