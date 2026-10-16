@@ -9,6 +9,10 @@ module.exports = (req, res) => {
   res.status(200).json({
     supabaseUrl: process.env.SUPABASE_URL || DEFAULT_URL,
     supabaseKey: process.env.SUPABASE_PUBLISHABLE_KEY || DEFAULT_KEY,
+    place: process.env.KAKAO_REST_API_KEY ? 'kakao' : 'osm',
+    placeGoogle: !!process.env.GOOGLE_PLACES_API_KEY,
+    tour: !!process.env.TOURAPI_KEY,
+    tm: !!process.env.TICKETMASTER_API_KEY,
     ai: process.env.GEMINI_API_KEY && ((process.env.AI_PROVIDER || '').toLowerCase() !== 'claude' || !process.env.ANTHROPIC_API_KEY) ? 'gemini' : process.env.ANTHROPIC_API_KEY ? 'claude' : 'none',
   });
 };

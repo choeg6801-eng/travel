@@ -198,3 +198,4 @@ module.exports = async (req, res) => {
   clearTimeout(timer);
   if (!res.writableEnded) { res.write(failed ? '\u0000ERR:' + failed : '\u0000END:' + stop); res.end(); }
 };
+module.exports.whoIs = whoIs;
