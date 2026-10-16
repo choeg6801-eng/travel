@@ -1720,17 +1720,34 @@ function convoRules(){
     '보조 조건: scope(여행 범위: 어디든/국내/가까운 해외/장거리 해외 또는 "유럽", "일본"처럼 사용자가 말한 범위), who(동행: 혼자/연인과/친구와/부모님과/아이와/가족 모두 등, 인원이 있으면 함께), place(콕 집은 희망 여행지가 있으면), from(출발지, 말 안 하면 인천), wish(꼭 가고 싶은 구체적인 장소·분위기·숙소 조건), extra(기타 요청·피하고 싶은 것).\n' +
     '- 사용자가 "오션뷰 LP바", "루프탑 수영장 있는 숙소", "현지인만 가는 국숫집"처럼 구체적인 장소나 분위기를 말하면 넓은 말로 바꾸지 말고 핵심 표현을 살려 wish에 쉼표로 적어("있으면 좋겠고" 같은 군더더기는 빼고 "근처 시장"처럼 짧게). wish에는 지금까지의 전체 목록을 매번 다시 적되, 사용자가 바꾸거나 취소한 것은 고치거나 빼(예: "엘피바는 술 안 팔아도 돼" → "바다 앞 LP 감상 공간"). 모두 취소하면 "없음". taste에는 미식·자연 같은 큰 범주만.\n' +
     '규칙:\n- 사용자가 한 번에 여러 정보를 말하면 모두 반영하고, 이미 아는 건 다시 묻지 마. 말투나 맥락에서 스타일을 추론할 수 있으면 채워.\n- 핵심 조건 중 빠진 게 있으면 한 번에 1~2개만 자연스럽게 물어봐. 모르겠다고 하면 무난한 기본값을 제안하고 채워.\n' +
-    '- 사용자가 연차·휴가 일수를 말하거나 언제 가면 좋을지 물으면, 상태에 있는 연휴 후보에서 골라 날짜와 쉬는 일수를 제안하고 when·len을 채워.\n- 동행·여행 범위·출발지(어느 도시에서 출발하는지, 상태의 from)를 아직 모르면 핵심 조건을 물을 때 한 번만 가볍게 같이 물어봐(답이 없으면 동행은 미정, 범위는 어디든으로 두고 넘어가). 국내 여행도 추천할 수 있어.\n- 핵심 조건 5가지가 모두 모였거나, 4가지 이상 모이고 사용자가 원하거나, 사용자가 바로 추천을 원하면 action "recommend".\n- 추천 목록이 있고 사용자가 그중 한 도시의 코스를 원하면 action "plan", planIndex(나라 순위, 0부터), cityIndex(그 나라 도시 순위, 0부터, 말 안 하면 0). 그러면 그 도시의 코스 3안을 보여 줘.\n- 코스 3안이 나와 있고 사용자가 그중 하나를 고르면 action "pick_course", courseIndex(0부터).\n- 사용자가 목록에 없는 특정 도시 하나를 정해 코스를 원하면 place를 채우고 action "plan_place".\n- 이미 만든 코스(상태의 "현재 열린 코스")가 있고 사용자가 그 코스의 일부를 바꾸거나 조건을 보충·정정하면(예: "LP바는 술 안 팔아도 돼", "둘째 날은 느긋하게") 새로 짜지 말고 action "refine_trip", refine에는 코스에 적용할 구체적인 수정 요청 한두 문장. 다른 나라·도시로 바꾸고 싶다고 할 때만 새로 추천해.\n- reply에서 아직 하지 않은 일을 했다고 말하지 마("다듬어 두었어요" 대신 "반영해서 고쳐 볼게요").\n- 조건을 바꾸거나 다른 추천을 원하면 조건을 고치고 action "recommend".\n- 여행과 관계없는 말이면 짧게 답하고 여행 이야기로 돌아와.\n' +
+    '- 사용자가 연차·휴가 일수를 말하거나 언제 가면 좋을지 물으면, 상태에 있는 연휴 후보에서 골라 날짜와 쉬는 일수를 제안하고 when·len을 채워.\n- 동행·여행 범위·출발지(어느 도시에서 출발하는지, 상태의 from)를 아직 모르면 핵심 조건을 물을 때 한 번만 가볍게 같이 물어봐(답이 없으면 동행은 미정, 범위는 어디든으로 두고 넘어가). 국내 여행도 추천할 수 있어.\n- 핵심 조건 5가지가 모두 모였거나, 4가지 이상 모이고 사용자가 원하거나, 사용자가 바로 추천을 원하면 action "recommend".\n- 추천 목록이 있고 사용자가 그중 한 도시의 코스를 원하면 action "plan", planIndex(나라 순위, 0부터), cityIndex(그 나라 도시 순위, 0부터, 말 안 하면 0). 그러면 그 도시의 코스 3안을 보여 줘.\n- 코스 3안이 나와 있고 사용자가 그중 하나를 고르면 action "pick_course", courseIndex(0부터).\n- 사용자가 목록에 없는 특정 도시 하나를 정해 코스를 원하면 place를 채우고 action "plan_place".\n- 이미 만든 코스(상태의 "현재 열린 코스")가 있고 사용자가 그 코스의 일부를 바꾸거나 조건을 보충·정정하면(예: "LP바는 술 안 팔아도 돼", "둘째 날은 느긋하게") 새로 짜지 말고 action "refine_trip", refine에는 코스에 적용할 구체적인 수정 요청 한두 문장. 다른 나라·도시로 바꾸고 싶다고 할 때만 새로 추천해. refine에는 사용자가 실제로 말한 바꿀 부분만 적고, 사용자가 말하지 않은 일정까지 바꾸자고 쓰지 마.\n- refine_trip일 때 reply는 무엇을 어떻게 바꿀지 한 문장으로 말하고 "이렇게 고칠까요?"처럼 확인을 구해(화면에 확인 버튼이 나와). 바로 고쳤다고 말하지 마.\n- 요청이 막연하면(예: "액티비티 넣어줘", "더 좋은 데로") 바로 refine_trip 하지 말고 구체적인 후보 2~3곳을 suggestions로 제안하며 action "ask".\n- 사용자가 너의 대화 방식에 대해 말하면(예: "먼저 물어보고 바꿔") 코스를 고치지 말고 알겠다고만 답해(action "ask", refine은 빈 문자열).\n- reply에서 아직 하지 않은 일을 했다고 말하지 마("다듬어 두었어요" 대신 "반영해서 고쳐 볼게요").\n- 조건을 바꾸거나 다른 추천을 원하면 조건을 고치고 action "recommend".\n- 여행과 관계없는 말이면 짧게 답하고 여행 이야기로 돌아와.\n' +
     '- reply는 2~3문장으로 따뜻하고 간결하게. 추천 결과를 reply에 나열하지 마(화면에 카드로 보여 줘).\n- suggestions에는 사용자가 다음에 누를 만한 짧은 답 2~4개(지금 묻는 질문에 대한 답 위주).\n' +
     'JSON 하나로만 답해: {"reply":"...","conditions":{"when":"","len":"","budget":"","taste":"","style":"","scope":"","who":"","place":"","from":"","wish":"","extra":""},"action":"ask","planIndex":0,"cityIndex":0,"courseIndex":0,"refine":"","suggestions":["..."]}\n' +
     'action은 ask, recommend, plan, pick_course, plan_place, refine_trip 중 하나. conditions에는 지금까지 파악한 값을 모두 담아(모르면 빈 문자열).';
 }
+var YES_RE = /^(네|넵|예|응|웅|어|좋아|좋아요|좋습니다|그래|그래요|ㅇㅇ|ㅇㅋ|ok|okay|오케이|고쳐|고쳐줘|고쳐 줘|고쳐 주세요|반영|반영해|반영해줘|반영해 줘|진행|진행해|해줘|해 줘|바꿔|바꿔줘|바꿔 줘)([,.!~ ]*(이렇게|그렇게)?\s*(고쳐|바꿔|반영해|해)?\s*(줘|주세요|요)?)?[.!~ ]*$/i;
+var NO_RE = /^(아니|아니요|아뇨|아냐|ㄴㄴ|싫어|취소|됐어|그대로|그냥 둬|그대로 둬|그대로 둘래|그대로 둘래요|하지 마|하지마)/;
 function send(text){
   text = String(text || '').trim();
   if (!text || C.busy) return;
   C.msgs.push({ who: 'me', text: text }); C.err = ''; C.suggestions = [];
   $('msgInput').value = ''; autoGrow();
+  if (text === '방금 수정 되돌리기') { C.msgs.push({ who: 'bot', text: refineUndo() ? '방금 수정하기 전 코스로 되돌렸어요.' : '되돌릴 수정이 없어요.' }); C.suggestions = ['코스 다시 보기']; renderChat(); return; }
+  var pend = C.pendRefine; C.pendRefine = null;
+  if (pend && T && !T.example && (pend.trip === (tripId || T.title))) {
+    if (YES_RE.test(text) && !/근데|말고|대신|빼고|아니/.test(text)) { startChatRefine(pend.req, pend.wish); return; }
+    if (NO_RE.test(text) && text.length <= 14) { C.msgs.push({ who: 'bot', text: '알겠어요, 코스는 그대로 둘게요. 바꾸고 싶은 부분이 있으면 말해 주세요.' }); C.suggestions = ['코스 다시 보기']; renderChat(); return; }
+  }
   converse();
+}
+function startChatRefine(req, wish){
+  if (!T || T.example || demoMode) { renderChat(); return; }
+  if (refineCtl) { C.msgs.push({ who: 'bot', text: '지금 "' + T.title + '" 코스를 다른 요청으로 고치는 중이에요. 끝나면 다시 말해 주세요.' }); C.suggestions = ['코스 다시 보기']; renderChat(); return; }
+  // the chat's wish list is the up-to-date one (e.g. "LP바는 술 안 팔아도 돼"); only wishes named in this edit can move places
+  REF_PREWISH = (T.conditions || {}).wish || '';
+  if (wish != null) { T.conditions = T.conditions || {}; if (wish) T.conditions.wish = wish; else delete T.conditions.wish; }
+  $('refineInput').value = String(req).slice(0, 400); REFINE_CHAT = C; $('refineBtn').click();
+  C.msgs.push({ who: 'bot', text: '"' + T.title + '" 코스에서 말씀하신 부분만 고치는 중이에요. 보통 30~60초 걸리고, 끝나면 여기서 알려 드릴게요.' }); C.suggestions = ['코스 다시 보기']; renderChat();
 }
 function converse(){
   var history = C.msgs.slice(-18).map(function(m){ return { role: m.who === 'me' ? 'user' : 'assistant', content: m.text }; });
@@ -1756,7 +1773,8 @@ function converse(){
     }
     ALLC.forEach(function(l){ var v = c[l[0]]; if (typeof v !== 'string' || !v.trim()) return; if (l[0] === 'wish') { if (/^(없음|없어요|none)$/i.test(v.trim())) delete C.cond.wish; else C.cond.wish = mergeWish('', v); } else C.cond[l[0]] = v.trim(); });
     var lastMe = ''; for (var qi = C.msgs.length - 1; qi >= 0; qi--) if (C.msgs[qi].who === 'me') { lastMe = C.msgs[qi].text; break; }
-    var got = wishFromText(lastMe); if (got.length) C.cond.wish = mergeWish(C.cond.wish, got.join(', '));
+    var editing = T && !T.example && C.msgs.some(function(m){ return m.courses; });
+    var got = editing ? [] : wishFromText(lastMe); if (got.length) C.cond.wish = mergeWish(C.cond.wish, got.join(', '));
     if (data && data.reply) C.msgs.push({ who: 'bot', text: String(data.reply) });
     C.suggestions = (data && Array.isArray(data.suggestions) ? data.suggestions : []).slice(0, 4).map(String);
     var act = data && data.action;
@@ -1765,13 +1783,11 @@ function converse(){
     else if (act === 'pick_course' && lastCourses() && lastCourses().list[num(data.courseIndex)]) pickCourse(lastCourses(), num(data.courseIndex));
     else if (act === 'plan_place' && C.cond.place) planFromPlace(C.cond.place);
     else if (act === 'refine_trip' && T && !T.example && !demoMode) {
-      if (refineCtl) { C.msgs.push({ who: 'bot', text: '지금 "' + T.title + '" 코스를 다른 요청으로 고치는 중이에요. 끝나면 다시 말해 주세요.' }); C.suggestions = ['코스 다시 보기']; renderChat(); }
-      else {
-        // the chat's wish list is the up-to-date one; other conditions stay with the trip (the edit request carries them)
-        if ('wish' in C.cond) { T.conditions = T.conditions || {}; if (C.cond.wish) T.conditions.wish = C.cond.wish; else delete T.conditions.wish; }
-        $('refineInput').value = String((data && data.refine) || lastMe).slice(0, 400); REFINE_CHAT = C; $('refineBtn').click();
-        C.msgs.push({ who: 'bot', text: '"' + T.title + '" 코스를 고치는 중이에요. 보통 30~60초 걸리고, 끝나면 여기서 알려 드릴게요.' }); C.suggestions = ['코스 다시 보기']; renderChat();
-      }
+      // nothing changes until the traveller says yes — the edit is shown first
+      var rq = String((data && data.refine) || lastMe).trim().slice(0, 400);
+      C.pendRefine = { req: rq, trip: tripId || T.title, wish: 'wish' in C.cond ? (C.cond.wish || '') : null };
+      C.msgs.push({ who: 'bot', text: '고칠 내용: "' + rq + '"\n이 부분만 바꾸고 나머지 일정은 그대로 둘게요. 진행할까요?' });
+      C.suggestions = ['네, 고쳐 주세요', '아니요, 그대로 둘래요']; renderChat();
     }
     else renderChat();
   }, converse);
@@ -2157,18 +2173,29 @@ $('fromCity').addEventListener('change', function(){
 $('startDate').addEventListener('change', function(){ if (!T) return; T.startDate = this.value; if (T.events) delete T.events; touch(); });
 $('saveExample').addEventListener('click', function(){ if (!T || !profile) return; T.example = false; T.createdAt = Date.now(); tripId = null; saveTrip(true); renderTrip(); setStatus('saving'); });
 
-var CHANGED = null, CHANGED_FOR = null, ARM_T = 0;
+var CHANGED = null, CHANGED_FOR = null, ARM_T = 0, REF_UNDO = null, REF_PREWISH = null;
+function refineUndo(){
+  var u = REF_UNDO; if (!u || !T || u.t !== T || refineCtl) return false;
+  T.days = u.days; T.title = u.title; T.summary = u.summary; T.tips = u.tips; T.conditions = T.conditions || {};
+  if (u.wish) T.conditions.wish = u.wish; else delete T.conditions.wish; if (u.wishes) T.wishes = u.wishes; else delete T.wishes;
+  REF_UNDO = null; CHANGED = null; touch(); renderTrip(); var m = $('refineMsg'); if (m) { m.className = 'msg'; m.textContent = '수정하기 전으로 되돌렸어요.'; } return true;
+}
 function refineDiff(before, t){
-  var keys = new Set(), add = [], rm = 0, first = -1;
+  var keys = new Set(), add = [], rm = 0, first = -1, gone = [], moved = [];
   t.days.forEach(function(d, di){
     var was = before[di] || [];
     d.items.forEach(function(it){ var k = vNorm(it.name); if (was.indexOf(k) < 0 && it.type !== '이동' && it.type !== '숙소') { keys.add(di + '|' + k); add.push([di, it]); if (first < 0) first = di; } });
     var now = d.items.map(function(it){ return vNorm(it.name); }); rm += was.filter(function(k){ return now.indexOf(k) < 0; }).length;
+    (REF_UNDO && REF_UNDO.days[di] ? REF_UNDO.days[di].items : []).forEach(function(o){ var k = vNorm(o.name); if (o.type === '이동' || o.type === '숙소') return; if (now.indexOf(k) < 0) gone.push(vParts(o).ko); else { var n2 = d.items[now.indexOf(k)]; if (n2 && n2.time !== o.time) moved.push(vParts(o).ko + ' ' + o.time + '→' + n2.time); } });
   });
-  var text = add.length ? '새로 넣은 곳: ' + add.slice(0, 3).map(function(x){ return 'DAY ' + (x[0] + 1) + ' ' + vParts(x[1]).ko; }).join(', ') + (add.length > 3 ? ' 외 ' + (add.length - 3) + '곳' : '') + '.' + (rm > add.length ? ' 뺀 곳 ' + (rm - add.length) + '곳.' : '') : rm ? rm + '곳을 뺐어요.' : '장소는 그대로 두고 시간·순서만 고쳤어요.';
+  var text = add.length ? '새로 넣은 곳: ' + add.slice(0, 3).map(function(x){ return 'DAY ' + (x[0] + 1) + ' ' + vParts(x[1]).ko; }).join(', ') + (add.length > 3 ? ' 외 ' + (add.length - 3) + '곳' : '') + '.' : '';
+  if (gone.length) text += ' 뺀 곳: ' + gone.slice(0, 3).join(', ') + (gone.length > 3 ? ' 외 ' + (gone.length - 3) + '곳' : '') + '.';
+  if (moved.length) text += ' 시간 바뀐 곳: ' + moved.slice(0, 3).join(', ') + (moved.length > 3 ? ' 외 ' + (moved.length - 3) + '곳' : '') + '.';
+  text = text.trim() || '장소와 시간은 그대로예요.';
   return { keys: keys, first: first, text: text };
 }
 $('refineMsg').addEventListener('click', function(e){
+  if (e.target.closest('[data-refundo]')) { refineUndo(); return; }
   if (!e.target.closest('[data-seechg]') || !T) return;
   renderTrip(); var el = document.querySelector('#dayBody .item.changed') || $('dayBody'), hd = document.querySelector('#appPage header.top');
   window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - (hd ? hd.offsetHeight : 0) - 70, behavior: 'smooth' });
@@ -2182,23 +2209,27 @@ $('refineBtn').addEventListener('click', function(){
   if (aiMode() === 'none') { msg.className = 'msg err'; msg.textContent = ERR.no_ai; return; }
   var current = { title: T.title, summary: T.summary, days: T.days.map(function(d){ return { title: d.title, items: d.items.map(function(it){ return { time: it.time, name: it.name, q: it.q || '', type: it.type, wish: it.wish || '', why: it.why || '', note: it.note, price: it.pa || '' }; }) }; }), tips: T.tips };
   var prompt = '너는 한국인 여행자를 위한 여행 큐레이터야. 오늘은 ' + todayStr() + '이야.\n여행지: ' + T.city + ', ' + T.country + ' · ' + T.nights + '박 ' + T.days.length + '일' + (T.startDate ? ' · 출발 ' + T.startDate : '') + '\n여행자 조건:\n' + condText(T.conditions || {}) +
-    '\n\n지금 코스(JSON):\n' + JSON.stringify(current).slice(0, 20000) + '\n\n여행자의 수정 요청: "' + req + '"\n\n요청을 반영해 코스를 고쳐 줘. 요청과 관계없는 일정은 q까지 그대로 두고, 취향과 여행 스타일은 계속 지켜. 식사(맛집)는 하루 점심 1번(11:30~13:30)과 저녁 1번(18:00~20:00)이 기본이야. 맛집 두 곳을 연달아 두거나 식사 사이를 4시간보다 짧게 두지 마(간식·디저트는 카페나 쇼핑으로 짧게). 아침은 숙소 근처에서 가볍게 하거나 생략해. 오전엔 명소·체험, 점심 뒤엔 카페나 가벼운 산책, 저녁 뒤엔 야경·바·휴식처럼 하루 리듬을 자연스럽게 만들어. 실제로 있는 장소만 쓰고(지어내지 말 것), 한 일정에는 장소 하나만(name과 q는 같은 곳의 정확한 이름, 두 장소 이름을 섞지 말고 type도 그 장소의 실제 종류로) 새 장소에는 q(지도 검색용 공식 이름)를 꼭 넣어. 가격은 쓰지 마. 같은 형식의 JSON 하나로만 답해: {"title":"","summary":"","days":[{"title":"","items":[{"time":"","pid":"","name":"","q":"","type":"","wish":"","why":"","note":"","price":""}]}],"tips":[]} — days는 정확히 ' + T.days.length + '개.';
+    '\n\n지금 코스(JSON):\n' + JSON.stringify(current).slice(0, 20000) + '\n\n여행자의 수정 요청: "' + req + '"\n\n요청을 반영해 코스를 고쳐 줘. 가장 중요한 규칙: 수정 요청이 직접 가리키는 일정만 바꿔. 나머지 일정은 name·q·type·why·note·time과 날짜·순서까지 그대로 복사해(새 일정을 넣느라 시간이 겹칠 때만 바로 앞뒤 일정의 시간을 조금 밀어). 요청에 없는 장소를 다른 곳으로 바꾸거나, 빼거나, 다른 날로 옮기지 마. 요청이 시간대를 정했으면(예: 시장은 저녁에) 그 시간을 지켜. title·summary·tips도 바뀐 부분만 고쳐. 아래 식사·리듬 규칙은 새로 넣거나 옮기는 일정에만 적용해. 취향과 여행 스타일은 계속 지켜. 식사(맛집)는 하루 점심 1번(11:30~13:30)과 저녁 1번(18:00~20:00)이 기본이야. 맛집 두 곳을 연달아 두거나 식사 사이를 4시간보다 짧게 두지 마(간식·디저트는 카페나 쇼핑으로 짧게). 아침은 숙소 근처에서 가볍게 하거나 생략해. 오전엔 명소·체험, 점심 뒤엔 카페나 가벼운 산책, 저녁 뒤엔 야경·바·휴식처럼 하루 리듬을 자연스럽게 만들어. 실제로 있는 장소만 쓰고(지어내지 말 것), 한 일정에는 장소 하나만(name과 q는 같은 곳의 정확한 이름, 두 장소 이름을 섞지 말고 type도 그 장소의 실제 종류로) 새 장소에는 q(지도 검색용 공식 이름)를 꼭 넣어. 가격은 쓰지 마. 같은 형식의 JSON 하나로만 답해: {"title":"","summary":"","days":[{"title":"","items":[{"time":"","pid":"","name":"","q":"","type":"","wish":"","why":"","note":"","price":""}]}],"tips":[]} — days는 정확히 ' + T.days.length + '개.';
   refineCtl = new AbortController();
   $('refineBtn').disabled = true; $('refineStop').hidden = false; msg.className = 'msg'; msg.textContent = '코스를 고치는 중… 보통 30~60초 걸려요';
   var tgt = T, myCtl = refineCtl, rPool = null;
-  var auto = /^DAY \d+.*비 소식|영업하지 않아|^아래 장소들이/.test(req), newW = auto ? [] : wishFromText(req), oldWish = (T.conditions || {}).wish || '';
+  var auto = /^DAY \d+.*비 소식|영업하지 않아|^아래 장소들이/.test(req), newW = auto ? [] : wishFromText(req), oldWish = (T.conditions || {}).wish || '', preWish = REF_PREWISH != null ? REF_PREWISH : oldWish; REF_PREWISH = null;
   if (newW.length) { T.conditions = T.conditions || {}; T.conditions.wish = mergeWish(oldWish, newW.join(', ')); }
   poolWait(T.city, T, 9000).then(function(pool){ rPool = pool; if (myCtl.signal.aborted) throw { code: 'cancelled' }; return aiJson(prompt.replace('\n\n여행자의 수정 요청:', condWishLine(T) + '\n\n여행자의 수정 요청:') + poolText(pool, 'refine'), myCtl.signal); }).then(function(data){
     if (T !== tgt) return;
     if (!data || !Array.isArray(data.days)) throw { code: 'invalid_json' };
     var before = T.days.map(function(d){ return d.items.map(function(it){ return vNorm(it.name); }); });
-    T.days = keepChecks(enforceWishes(applyPool(normalizeDays(data.days, T.days.length), rPool), rPool), T.days); wishReport(T, rPool); var ro = optimizeTrip(T, { days: false });
+    REF_UNDO = { t: T, days: JSON.parse(JSON.stringify(T.days)), title: T.title, summary: T.summary, tips: (T.tips || []).slice(), wish: preWish, wishes: T.wishes ? JSON.parse(JSON.stringify(T.wishes)) : null };
+    // only wishes named in this request may push a place in; route order is not reshuffled (it would undo "시장은 저녁에")
+    var preK = String(preWish).split(/\s*[,，]\s*/).map(wishKey).filter(Boolean);
+    var newKeys = String((T.conditions || {}).wish || '').split(/\s*[,，]\s*/).map(wishKey).filter(function(k){ return k && preK.indexOf(k) < 0; });
+    T.days = keepChecks(enforceWishes(applyPool(normalizeDays(data.days, T.days.length), rPool), rPool, newKeys), T.days); wishReport(T, rPool); var ro = { days: 0 };
     if (data.title) T.title = String(data.title); if (data.summary) T.summary = String(data.summary);
     if (Array.isArray(data.tips) && data.tips.length) T.tips = data.tips.slice(0, isDom(T) ? 3 : 6).map(String);
     var chg = refineDiff(before, T); CHANGED = chg.keys; CHANGED_FOR = T; if (chg.first >= 0) curDay = chg.first;
-    $('refineInput').value = ''; msg.innerHTML = esc('요청대로 고쳤어요. ' + chg.text + (ro.days ? ' 동선도 다시 정리했어요.' : '')) + (chg.first >= 0 ? ' <button type="button" class="linkbtn" data-seechg="1">바뀐 일정 보기</button>' : '');
-    if (REFINE_CHAT && REFINE_CHAT === C) { C.msgs.push({ who: 'bot', text: '요청대로 "' + T.title + '" 코스를 고쳤어요. ' + chg.text + (T.wishes && T.wishes.length ? ' 꼭 원하는 곳 반영 결과도 코스 화면에서 확인해 보세요.' : '') }); C.suggestions = ['코스 다시 보기']; renderChat(); } REFINE_CHAT = null; armedDel = -1; touch();
-  }).catch(function(e){ if (newW.length && tgt.conditions) tgt.conditions.wish = oldWish; if (REFINE_CHAT && REFINE_CHAT === C) { C.msgs.push({ who: 'bot', text: e && e.code === 'cancelled' ? '코스 수정을 멈췄어요.' : '코스를 고치지 못했어요: ' + errText(e) }); renderChat(); } REFINE_CHAT = null; if (e && e.code === 'cancelled') { msg.textContent = '수정을 멈췄어요.'; return; } msg.className = 'msg err'; msg.textContent = errText(e); })
+    $('refineInput').value = ''; msg.innerHTML = esc('요청대로 고쳤어요. ' + chg.text + (ro.days ? ' 동선도 다시 정리했어요.' : '')) + (chg.first >= 0 ? ' <button type="button" class="linkbtn" data-seechg="1">바뀐 일정 보기</button>' : '') + ' <button type="button" class="linkbtn" data-refundo="1">되돌리기</button>';
+    if (REFINE_CHAT && REFINE_CHAT === C) { C.msgs.push({ who: 'bot', text: '요청대로 "' + T.title + '" 코스를 고쳤어요. ' + chg.text + (T.wishes && T.wishes.length ? ' 꼭 원하는 곳 반영 결과도 코스 화면에서 확인해 보세요.' : '') }); C.suggestions = ['코스 다시 보기', '방금 수정 되돌리기']; renderChat(); } REFINE_CHAT = null; armedDel = -1; touch();
+  }).catch(function(e){ if (tgt.conditions && (tgt.conditions.wish || '') !== preWish) { if (preWish) tgt.conditions.wish = preWish; else delete tgt.conditions.wish; } if (REFINE_CHAT && REFINE_CHAT === C) { C.msgs.push({ who: 'bot', text: e && e.code === 'cancelled' ? '코스 수정을 멈췄어요.' : '코스를 고치지 못했어요: ' + errText(e) }); renderChat(); } REFINE_CHAT = null; if (e && e.code === 'cancelled') { msg.textContent = '수정을 멈췄어요.'; return; } msg.className = 'msg err'; msg.textContent = errText(e); })
     .then(function(){ if (refineCtl === myCtl) { refineCtl = null; REFINE_CHAT = null; $('refineBtn').disabled = demoMode; $('refineStop').hidden = true; if (T) renderTrip(); } });
 });
 
@@ -3777,6 +3808,7 @@ function wishFromText(text){
       // connectors and verbs end a phrase ("좋아하고", "부모님이랑", "가고 싶어")
       if (/^(있으면|좋겠고|좋겠어|좋겠다|하면|되면|가면|있고|있는데|그리고|또는)$/.test(tok) || (/(으면|겠고|는데|지만|도록|면서)$/.test(tok) && !nounRe.test(core))) { cur = []; return; }
       if (/^(저녁|아침|점심|밤|낮|오전|오후|새벽|첫날|둘째\s?날|셋째\s?날|마지막\s?날|\d+일차|일정|코스|하루|이번)(엔|에|에는|은|는|도|엔꼭)?$/.test(tok) || /^(그리고|또|또는|및|좀|꼭|그냥|진짜|정말|특히|저는|나는|내가|우리|한번|가고|가보고|싶어|싶은|좋아|좋겠어|원해)$/.test(tok) || (/(하고|해서|하며|싶고|싶어|좋아|이랑|랑)$/.test(tok) && !nounRe.test(core))) { cur = []; return; }
+      if (!nounRe.test(core) && (/(을|ㄹ|던|서|게|고|해|때|며)$/.test(tok) || /^(잘|좀|많이|때|괜찮은|좋은|가서|와서)$/.test(tok))) { cur = []; return; }
       if (!nounRe.test(core)) { cur.push(tok); return; }
       cur.push(core);
       var w = cur.slice(-4).join(' ').trim(); cur = [];
@@ -3944,10 +3976,12 @@ function wishRules(pool){
     '\n후보 목록의 "요청N" 표시와 근거(✓ 맞음, △ 애매, ✗ 아님)를 봐. 요청마다 완전 일치(모든 항목 ✓) 후보를 최우선으로 어울리는 시간대(바는 저녁)에 넣고, 그 일정의 wish에 요청 번호를 적어. 완전 일치가 없으면 가장 가까운 후보를 넣되 why에 무엇이 다른지 솔직히 적어(예: "재즈바지만 바다는 600m 떨어짐"). 맞는 후보가 하나도 없으면 다른 곳으로 몰래 바꿔 넣지 말고 그 요청은 비워 두고 tips에 "○○는 지도 데이터에서 찾지 못했어요"라고 적어.';
 }
 // the traveller asked for it explicitly: if a fully matching place exists, use it (swap a partial pick, or add it in the evening)
-function enforceWishes(days, pool){
+function enforceWishes(days, pool, onlyKeys){
   if (!pool || !pool.wishes || !pool.wishes.length) return days;
+  if (onlyKeys && !onlyKeys.length) return days;
   var used = {}; days.forEach(function(d){ d.items.forEach(function(it){ used[vNorm(it.q || vParts(it).loc || vParts(it).ko)] = 1; }); });
   pool.wishes.forEach(function(w, wi){
+    if (onlyKeys) { var wk = wishKey(w.w); if (!onlyKeys.some(function(k){ return k && (k === wk || k.indexOf(wk) >= 0 || wk.indexOf(k) >= 0); })) return; }
     var n = wi + 1, full = pool.list.filter(function(p){ return p.wish === n && p.wishEv && p.wishEv.full && !used[vNorm(p.name)]; });
     var mine = []; days.forEach(function(d, di){ d.items.forEach(function(it, ii){ if (num(it.wish) === n) mine.push({ di: di, ii: ii, it: it }); }); });
     if (mine.some(function(m){ return m.it.wev && m.it.wev.full; }) || !full.length) return;
@@ -4126,7 +4160,7 @@ function cleanV(v){ if (!v || typeof v !== 'object' || ['ok', 'no', 'me', 'close
 function vParts(it){ var n = String(it.name || '').trim().replace(/^(체크인|체크아웃|숙소) · /, ''), m = n.match(/^(.*?)\s*[(（]([^()（）]+)[)）]\s*$/); return { ko: (m ? m[1] : n).trim(), loc: m ? m[2].trim() : '' }; }
 function vKey(it){ return (String(it.q || '') + '|' + String(it.name || '')).trim().toLowerCase(); }
 function vWanted(it){ if (it.ev) return false; if (V_SKIP.test(String(it.type || '')) && !(it.type === '숙소' && /^(체크인|체크아웃|숙소) · /.test(String(it.name || '')))) return false; var p = vParts(it); if (!it.q && !p.loc && V_GENERIC.test(p.ko)) return false; return (it.q || p.loc || p.ko).length >= 2; }
-function keepChecks(days, old){ var map = {}; old.forEach(function(d){ d.items.forEach(function(it){ if (it.v || it.ll) map[vKey(it)] = it; }); }); days.forEach(function(d){ d.items.forEach(function(it){ var o = map[vKey(it)]; if (o && !it.v) it.v = o.v; if (o && o.done) it.done = true; if (o && o.ll && !it.ll) it.ll = o.ll; if (o && o.rt && !it.rt) it.rt = o.rt; if (o && o.pr && !it.pr) it.pr = o.pr; }); }); return days; }
+function keepChecks(days, old){ var map = {}; old.forEach(function(d){ d.items.forEach(function(it){ if (it.v || it.ll) map[vKey(it)] = it; }); }); days.forEach(function(d){ d.items.forEach(function(it){ var o = map[vKey(it)]; if (o && !it.v) it.v = o.v; if (o && o.done) it.done = true; if (o && o.ll && !it.ll) it.ll = o.ll; if (o && o.rt && !it.rt) it.rt = o.rt; if (o && o.pr && !it.pr) it.pr = o.pr; if (o && o.wev && !it.wev && num(o.wish) === num(it.wish)) it.wev = o.wev; }); }); return days; }
 function vNorm(x){ return String(x || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[\s·・\-–_'’".,()（）\[\]&/!?:;]+/g, ''); }
 function vSim(a, b){
   a = vNorm(a); b = vNorm(b); if (!a || !b) return 0; if (a === b) return 1;
