@@ -42,9 +42,14 @@ async function gemini(res, key, msgs, stream) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 285000);
   res.on('close', () => { if (!res.writableEnded) ctrl.abort(); });
+  // same question → same answer: a seed from the request text, and a low temperature for one-shot
+  // structured requests (recommendations, course options, day plans); chat turns keep a little variety
+  let h = 2166136261; const all = msgs.map(m => m.role + ':' + m.content).join('\n');
+  for (let i = 0; i < all.length; i++) { h ^= all.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  const oneShot = msgs.filter(m => m.role !== 'assistant').length === 1;
   const payload = JSON.stringify({
     contents: msgs.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
-    generationConfig: { maxOutputTokens: 30000, responseMimeType: 'application/json' },
+    generationConfig: { maxOutputTokens: 30000, responseMimeType: 'application/json', seed: h % 2147483647, temperature: oneShot ? 0.35 : 0.5 },
   });
   let r, model, lastMsg = '';
   for (const m of GEMINI_MODELS()) {
