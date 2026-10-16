@@ -36,9 +36,9 @@ const kItem = d => ({ id: d.id, name: d.place_name, lat: +d.y, lon: +d.x, u: Str
 function kCat(p) {
   const c = p.cat;
   if (p.code === 'CE7' || /카페|디저트|베이커리|제과/.test(c)) return '카페';
-  if (/술집|바$|> 바 |와인바|칵테일바|재즈바|LP바|펍|호프|이자카야/.test(c)) return '바';
+  if (/술집|주점|포장마차|이자카야|호프|> ?바(\s|,|$)|바$|와인바|칵테일바|재즈바|LP바|펍/.test(c)) return /포장마차|포차|요리주점|이자카야|일본식주점|오뎅|막걸리|전통주점|호프/.test(c) && !/칵테일바|와인바|재즈바|LP|엘피|위스키|라운지|> ?바(\s|,|$)|펍|맥주|브루어리/i.test(c) ? '맛집' : '바';
   if (p.code === 'FD6' || /^음식점/.test(c)) return '맛집';
-  if (/시장|쇼핑|백화점|아울렛|쇼핑몰/.test(c)) return '쇼핑';
+  if (/시장|쇼핑|백화점|아울렛|쇼핑몰|소품|기념품|문구|선물|잡화|생활용품|편집|인테리어|공예|서점/.test(c)) return '쇼핑';
   if (/테마파크|놀이|체험|레저|아쿠아|동물원|수목원|워터파크|스포츠/.test(c)) return '체험';
   return '명소';
 }
@@ -50,7 +50,7 @@ async function kakaoPool(key, city, ll, kws) {
   // nearby by category, ranked by Kakao's relevance
   for (const code of ['AT4', 'CT1', 'FD6', 'CE7']) for (const page of [1, 2, 3]) jobs.push({ tag: code, w: 1, call: () => kakao('category', { category_group_code: code, ...xy, radius: 20000, sort: 'accuracy', page, size: 15 }, key) });
   // what people search for in this city, plus the traveller's own taste words
-  const words = ['가볼만한곳', '관광명소', '맛집', '현지인 맛집', '카페', '시장'].concat(kws.map(k => k + ' 맛집').filter((x, i) => i < 1)).concat(kws);
+  const words = ['가볼만한곳', '관광명소', '맛집', '현지인 맛집', '카페', '시장'].concat(kws.filter(k => !/샵|숍|쇼핑|가게/.test(k)).map(k => k + ' 맛집').filter((x, i) => i < 1)).concat(kws);
   for (const w of words) for (const page of [1, 2]) jobs.push({ tag: w, w: kws.includes(w) ? 2 : 1.5, call: () => kakao('keyword', { query: city + ' ' + w, ...xy, page, size: 15 }, key) });
   const results = await Promise.all(jobs.map(j => j.call().then(list => ({ j, list }), e => { if (e.code === 'bad_key') throw e; return { j, list: [] }; })));
   const byId = new Map();
@@ -89,13 +89,14 @@ const PRICE = { PRICE_LEVEL_INEXPENSIVE: '저렴', PRICE_LEVEL_MODERATE: '보통
 function gCat(t) {
   t = String(t || '');
   if (/cafe|coffee|bakery|dessert|tea_house|ice_cream|confectionery|juice/.test(t)) return '카페';
-  if (/restaurant|food|bar_and_grill|diner|steak|ramen|sushi|noodle|bistro|brunch|meal|pub/.test(t)) return '맛집';
-  if (/market|shopping|mall|store/.test(t)) return '쇼핑';
-  if (/amusement|zoo|aquarium|park|spa/.test(t)) return '체험';
+  if (/restaurant|food|bar_and_grill|barbecue|diner|steak|ramen|sushi|noodle|bistro|brunch|meal|gastropub|deli|pizza|hamburger/.test(t)) return '맛집';
+  if (/^(bar|pub|wine_bar|cocktail_bar|lounge_bar|sports_bar|night_club|brewery|brewpub|beer_garden|beer_hall|hookah_bar|irish_pub|karaoke)$|_bar$|_pub$/.test(t)) return '바';
+  if (/market|shopping|mall|store|gift|souvenir/.test(t)) return '쇼핑';
+  if (/amusement|zoo|aquarium|water_park|^spa$|bowling|ski|golf|climbing|escape_room|adventure|horseback|surf/.test(t)) return '체험';
   return '명소';
 }
 async function googlePool(key, city, ll, kws) {
-  const qs = [city + ' 맛집', city + ' 현지 맛집', city + ' 카페', city + ' 가볼만한 곳'].concat(kws.filter(k => !/맛집|카페/.test(k)).slice(0, 2).map(k => city + ' ' + k + ' 맛집'));
+  const qs = [city + ' 맛집', city + ' 현지 맛집', city + ' 카페', city + ' 가볼만한 곳'].concat(kws.filter(k => !/맛집|카페|샵|숍|쇼핑|가게/.test(k)).slice(0, 2).map(k => city + ' ' + k + ' 맛집').concat(kws.filter(k => /샵|숍/.test(k)).slice(0, 1).map(k => city + ' ' + k)));
   const mask = 'places.id,places.displayName,places.location,places.businessStatus,places.googleMapsUri,places.primaryType,places.rating,places.userRatingCount,places.priceLevel,places.priceRange';
   const runs = await Promise.all(qs.map(q => fetch('https://places.googleapis.com/v1/places:searchText', {
     method: 'POST',

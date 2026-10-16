@@ -135,12 +135,13 @@ async function bus(key, from, to, date) {
   if (!A.length || !B.length) return { src: 'tago_bus', list: [], none: !A.length ? 'from' : 'to' };
   const d = date.replace(/-/g, ''), pairs = [];
   A.forEach(a => B.forEach(b => { if (pairs.length < 6) pairs.push([a, b]); }));
-  const rs = await Promise.all(pairs.map(([a, b]) => tago(BUS, 'GetStrtpntAlocFndExpbusInfo', { depTerminalId: a.id, arrTerminalId: b.id, depPlandTime: d }, key).catch(() => [])));
+  // keep the terminal ids: they carry the KOBUS terminal codes (NAEK010 → 010) for a ready-filled booking page
+  const rs = await Promise.all(pairs.map(([a, b]) => tago(BUS, 'GetStrtpntAlocFndExpbusInfo', { depTerminalId: a.id, arrTerminalId: b.id, depPlandTime: d }, key).then(l => l.map(x => Object.assign({ _dep: a.id, _arr: b.id }, x)), () => [])));
   const seen = new Set(), list = [];
   [].concat(...rs).forEach(x => {
     const dep = String(x.depPlandTime || ''), arr = String(x.arrPlandTime || ''), k = (x.depPlaceNm || '') + dep + (x.gradeNm || '');
     if (seen.has(k)) return; seen.add(k);
-    list.push({ grade: x.gradeNm || '', from: x.depPlaceNm || '', to: x.arrPlaceNm || '', dep: hhmm(dep), arr: hhmm(arr), fare: +x.charge || 0, mins: dep && arr ? minsBetween(dep, arr) : 0 });
+    list.push({ grade: x.gradeNm || '', from: x.depPlaceNm || '', to: x.arrPlaceNm || '', dep: hhmm(dep), arr: hhmm(arr), fare: +x.charge || 0, mins: dep && arr ? minsBetween(dep, arr) : 0, depId: String(x._dep || ''), arrId: String(x._arr || '') });
   });
   list.sort((a, b) => a.dep.localeCompare(b.dep));
   return { src: 'tago_bus', date, list };
