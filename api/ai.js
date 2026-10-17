@@ -29,7 +29,7 @@ async function whoIs(token) {
 }
 
 // ---------- Google Gemini (free tier) ----------
-const GEMINI_MODELS = () => [process.env.GEMINI_MODEL, 'gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-3.8-flash'].filter((m, i, a) => m && a.indexOf(m) === i);
+const GEMINI_MODELS = () => [process.env.GEMINI_MODEL, 'gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-flash-latest', 'gemini-flash-lite-latest'].filter((m, i, a) => m && a.indexOf(m) === i);
 function geminiCode(status, msg) {
   if (status === 429) return 'quota';
   if (status === 400 && /API key not valid|API_KEY_INVALID/i.test(msg)) return 'bad_key';
@@ -38,6 +38,7 @@ function geminiCode(status, msg) {
   if (status === 503 || status === 500) return 'overloaded';
   return 'upstream_error';
 }
+const FIRST_MS = +process.env.AI_FIRST_MS || 70000;
 async function gemini(res, key, msgs, stream) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 285000);
@@ -58,31 +59,47 @@ async function gemini(res, key, msgs, stream) {
     return g;
   };
   const payloadFor = (m, plain) => JSON.stringify({ contents, generationConfig: cfgFor(m, plain) });
-  let r, model, lastMsg = '';
-  for (const m of GEMINI_MODELS()) {
-    model = m;
+  let r = null, model, lastMsg = '', seen = [], reader = null, first = null, slow = 0;
+  const list = GEMINI_MODELS(), url = m => 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(m) + ':' + (stream ? 'streamGenerateContent?alt=sse' : 'generateContent');
+  for (let mi = 0; mi < list.length; mi++) {
+    const m = list[mi]; model = m;
+    const mc = new AbortController(), stopIt = () => mc.abort(); ctrl.signal.addEventListener('abort', stopIt);
     try {
-      r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(m) + ':' + (stream ? 'streamGenerateContent?alt=sse' : 'generateContent'), {
-        method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': key }, body: payloadFor(m, false), signal: ctrl.signal,
-      });
+      r = await fetch(url(m), { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': key }, body: payloadFor(m, false), signal: mc.signal });
       // a model that doesn't know a speed setting: ask again without it
       if (r.status === 400) {
         const t = await r.clone().text().catch(() => '');
-        if (/thinking|seed|temperature|Unknown name|Invalid JSON payload/i.test(t)) r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(m) + ':' + (stream ? 'streamGenerateContent?alt=sse' : 'generateContent'), {
-          method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': key }, body: payloadFor(m, true), signal: ctrl.signal,
-        });
+        if (/thinking|seed|temperature|Unknown name|Invalid JSON payload/i.test(t)) r = await fetch(url(m), { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': key }, body: payloadFor(m, true), signal: mc.signal });
       }
-    } catch (e) { clearTimeout(timer); return fail(res, 504, 'timeout', 'Gemini did not answer in time'); }
+    } catch (e) {
+      if (ctrl.signal.aborted) { clearTimeout(timer); return fail(res, 504, 'timeout', 'Gemini did not answer in time'); }
+      seen.push(503); r = null; continue;
+    }
     // not available / busy / this model's free quota used up → try the next free model
-    if (![404, 429, 500, 503].includes(r.status)) break;
-    lastMsg = ((await r.json().catch(() => ({}))).error || {}).message || '';
-    if (r.status !== 404) await new Promise(ok => setTimeout(ok, 600));
+    if ([404, 429, 500, 503].includes(r.status)) {
+      seen.push(r.status);
+      lastMsg = ((await r.json().catch(() => ({}))).error || {}).message || '';
+      if (r.status !== 404) await new Promise(ok => setTimeout(ok, 600));
+      continue;
+    }
+    if (!r.ok || !stream) break;
+    // streaming: wait for the first piece of the answer; a model that stays silent too long is skipped,
+    // so one stuck model can't leave the traveller waiting for minutes
+    reader = r.body.getReader();
+    const got = await Promise.race([reader.read(), new Promise(ok => setTimeout(() => ok(null), slow ? FIRST_MS * 1.5 : FIRST_MS))]).catch(() => null);
+    if (got) { first = got; break; }
+    mc.abort(); reader = null; seen.push(503); lastMsg = m + ' did not start answering in time';
+    // two silent models in a row: Gemini is overloaded right now — say so instead of keeping the traveller waiting
+    if (++slow >= 2 || ctrl.signal.aborted) break;
   }
-  if (!r.ok) {
+  if (!r || !r.ok || (stream && !reader)) {
     clearTimeout(timer);
-    const j = await r.json().catch(() => ({}));
+    const j = r && !r.ok ? await r.json().catch(() => ({})) : {};
     const msg = (j && j.error && j.error.message) || lastMsg;
-    return fail(res, r.status === 429 ? 429 : 502, r.status === 404 ? 'bad_model' : geminiCode(r.status, msg), msg);
+    // every model was tried: report the real reason (used-up free quota is the usual one), not just the last model's 404
+    const tried = !r || r.ok || [404, 429, 500, 503].includes(r.status);
+    const code = !tried ? geminiCode(r.status, msg) : seen.includes(429) ? 'quota' : seen.some(s => s >= 500) ? 'overloaded' : r && r.status === 404 ? 'bad_model' : 'overloaded';
+    return fail(res, code === 'quota' ? 429 : 502, code, msg);
   }
   const textOf = j => ((((j.candidates || [])[0] || {}).content || {}).parts || []).filter(p => !p.thought && typeof p.text === 'string').map(p => p.text).join('');
   const stopOf = j => (((j.candidates || [])[0] || {}).finishReason) || '';
@@ -93,11 +110,11 @@ async function gemini(res, key, msgs, stream) {
     return res.status(200).json({ text: textOf(j), stop_reason: stopCode(stopOf(j)), model });
   }
   res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'x-accel-buffering': 'no' });
-  const reader = r.body.getReader(); const dec = new TextDecoder();
+  const dec = new TextDecoder();
   let buf = '', stop = '', failed = '';
   try {
     for (;;) {
-      const { done, value } = await reader.read();
+      const { done, value } = first || await reader.read(); first = null;
       if (done) break;
       buf += dec.decode(value, { stream: true });
       let nl;
