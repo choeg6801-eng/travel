@@ -451,8 +451,9 @@ main.app{padding-block:28px 64px}
 .links a small{font-weight:500;color:var(--muted);text-align:right}
 .tips{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:14px;color:var(--muted)}
 .mvlist .mvbook{min-height:32px;padding:4px 12px;font-size:12px;align-self:center}
+.routeline.warn{box-shadow:inset 3px 0 0 var(--warn)}.routeline .rbetter{display:block;color:var(--warn);font-weight:700;font-size:12.5px;margin-top:2px}
 .sunline{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;margin:6px 0 10px;padding:8px 12px;border-radius:12px;background:var(--surface-2);font-size:13px;font-weight:700}.sunline small{color:var(--muted);font-weight:500}
-.sunchip{display:inline-block;margin:6px 6px 0 0;padding:3px 9px;border-radius:999px;background:var(--surface-2);font-size:12px;font-weight:700}.sunchip.off{background:#FFF1E0;color:#8A4B00}
+.sunchip{display:inline-block;margin:6px 6px 0 0;padding:3px 9px;border-radius:999px;background:var(--surface-2);font-size:12px;font-weight:700}.sunchip.off{box-shadow:inset 0 0 0 1px var(--warn);color:var(--warn)}
 .refine textarea{width:100%;min-height:84px;resize:vertical;padding:12px 14px;border-radius:14px;border:1px solid var(--line);background:var(--bg)}
 .refine .quick{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
 .refine .quick button{min-height:36px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--surface-2);font-size:13px;font-weight:700}
@@ -1314,9 +1315,10 @@ var ERR = {
   bad_model: 'AI 모델에 연결하지 못했어요. 잠시 뒤 다시 시도해 주세요. 계속되면 Vercel의 GEMINI_MODEL 값을 확인해 주세요.',
   no_credit: 'Anthropic API 크레딧이 부족해요. console.anthropic.com → Billing에서 크레딧을 충전해 주세요.',
   overloaded: 'AI 서버가 잠깐 붐벼요. 30초쯤 뒤에 같은 요청을 다시 보내 주세요.',
-  timeout: '답이 너무 오래 걸렸어요. 한 번 더 보내 주세요.',
+  timeout: 'AI 답이 4분 넘게 오지 않아서 기다리기를 멈췄어요. 바뀐 건 없어요. 같은 요청을 한 번 더 보내 주세요.',
   too_long: '답이 너무 길어서 잘렸어요. 기간을 줄이거나 한 번 더 보내 주세요.',
   config: '서버 설정을 불러오지 못했어요. 잠시 뒤 새로고침해 주세요.',
+  cut: 'AI 답을 받는 중에 연결이 끊겼어요. 잠시 뒤 같은 요청을 다시 보내 주세요.',
   network: '서버에 연결하지 못했어요. 인터넷 연결을 확인해 주세요.'
 };
 function errText(e){ return (e && ERR[e.code]) || (e && /upstream|server|overloaded|http|timeout/.test(String(e.code)) ? '서버가 잠시 바빠요. 잠시 뒤 다시 시도해 주세요.' : '잠시 문제가 생겼어요. 다시 시도해 주세요.'); }
@@ -1328,31 +1330,50 @@ function parseJsonLoose(text){
   throw { code: 'invalid_json' };
 }
 function mergeTurns(turns){ var out = []; turns.forEach(function(t){ var last = out[out.length - 1]; if (last && last.role === t.role) last.content += '\n\n' + t.content; else out.push({ role: t.role, content: t.content }); }); return out; }
-function aiJson(input, signal, onText, retried){
-  var messages = typeof input === 'string' ? [{ role: 'user', content: input }] : mergeTurns(input);
+// hard deadline: whatever happens on the way (phone asleep, a connection that silently hangs, a stuck server),
+// one AI request never waits longer than this. The server gives up at about 4 minutes, so this is a backstop.
+var AI_DEADLINE_MS = 270000;
+function aiJson(input, signal, onText, retried, again, until){
+  if (!until) until = Date.now() + (window.__MT_AI_MS || AI_DEADLINE_MS);
+  var ac = new AbortController(), late = false, stop = function(){ try { ac.abort(); } catch(e){} };
+  if (signal) { if (signal.aborted) stop(); else signal.addEventListener('abort', stop); }
+  var left = Math.max(1000, until - Date.now()), dog, guard = new Promise(function(_, no){ dog = setTimeout(function(){ late = true; stop(); no({ code: 'timeout' }); }, left); });
+  var done = function(){ clearTimeout(dog); if (signal) signal.removeEventListener('abort', stop); };
+  return Promise.race([aiJsonRun(input, signal, ac, onText, retried, again, until, function(){ return late; }), guard]).then(function(v){ done(); return v; }, function(e){ done(); throw late ? { code: 'timeout' } : e; });
+}
+function aiJsonRun(input, signal, ac, onText, retried, again, until, isLate){
+  var messages = typeof input === 'string' ? [{ role: 'user', content: input }] : mergeTurns(input), started = false;
   return token(!!retried).then(function(t){
-    return fetch('/api/ai', { method: 'POST', signal: signal, headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + t }, body: JSON.stringify({ model: cfg.model, messages: messages, stream: true }) });
+    return fetch('/api/ai', { method: 'POST', signal: ac.signal, headers: { 'content-type': 'application/json', Authorization: 'Bearer ' + t }, body: JSON.stringify({ model: cfg.model, messages: messages, stream: true }) });
   }).then(function(r){
     if (!r.ok) return r.json().catch(function(){ return {}; }).then(function(j){
-      if (r.status === 401 && !retried) return aiJson(input, signal, onText, true);
+      if (r.status === 401 && !retried) return aiJson(input, signal, onText, true, again, until);
       var code = (j && j.error && j.error.code) || (r.status === 504 ? 'timeout' : r.status === 429 ? 'rate_limited' : 'upstream_error'); if (code === 'signed_out') signedOut(); throw { code: code, message: j && j.error && j.error.message };
     });
+    started = true;
     var reader = r.body.getReader(), dec = new TextDecoder(), text = '';
     var pump = function(){ return reader.read().then(function(x){
       if (x.done) {
         var z = text.indexOf('\u0000'), tail = z >= 0 ? text.slice(z + 1) : '';
-        if (z < 0) throw { code: 'network' };
+        if (z < 0) throw { code: 'cut' };
         if (tail.indexOf('ERR:') === 0) throw { code: tail.slice(4) || 'upstream_error' };
         if (tail === 'END:max_tokens') throw { code: 'too_long' };
         if (tail === 'END:refusal') throw { code: 'refusal' };
         return parseJsonLoose(text.slice(0, z));
       }
-      text += dec.decode(x.value, { stream: true });
+      text += dec.decode(x.value, { stream: true }).replace(/\u0001/g, '');
       if (onText && text.indexOf('\u0000') < 0) { try { onText(text); } catch(e){} }
       return pump();
     }); };
     return pump();
-  }).catch(function(err){ throw (err && err.name === 'AbortError') ? { code: 'cancelled' } : (err && err.code) ? err : { code: 'network' }; });
+  }).catch(function(err){
+    // an answer that had started arriving and then broke off is a cut connection, not "no internet"
+    if (isLate()) throw { code: 'timeout' };
+    var e = (err && err.name === 'AbortError') || (signal && signal.aborted) ? { code: 'cancelled' } : (err && err.code) ? err : { code: started ? 'cut' : 'network' };
+    // the answer was cut off on the way (platform/connection hiccup): ask once more before showing an error
+    if (!again && (e.code === 'cut' || (e.code === 'network' && err && err.name === 'TypeError' && /network|fetch|load/i.test(String(err.message))))) return aiJson(input, signal, onText, retried, true, until);
+    throw e;
+  });
 }
 function refreshAI(){
   var on = !!profile, prov = CONF && CONF.ai;
@@ -2200,7 +2221,7 @@ $('dayTabs').addEventListener('keydown', function(e){
 $('dayTabs').addEventListener('click', function(e){ var b = e.target.closest('[data-day]'); if (!b) return; curDay = +b.getAttribute('data-day'); armedDel = -1; openMaps = -1; renderTrip(); });
 $('dayBody').addEventListener('click', function(e){
   var dn = e.target.closest('[data-done]'); if (dn) { var di = +dn.getAttribute('data-done'), itm = T.days[curDay].items[di]; itm.done = !itm.done; touch(); var f = document.querySelector('[data-done="' + di + '"]'); if (f) f.focus(); return; }
-  var od = e.target.closest('[data-optday]'); if (od) { var oi = +od.getAttribute('data-optday'), r0 = optimizeTrip(T, { only: oi, days: false }); if (r0.days) { touch(); toast('DAY ' + (oi + 1) + ' 동선을 정리했어요 · ' + r0.before.toFixed(1) + 'km → ' + r0.after.toFixed(1) + 'km'); } else toast('지금 순서가 이미 가장 짧아요'); return; }
+  var od = e.target.closest('[data-optday]'); if (od) { var oi = +od.getAttribute('data-optday'), keepD = JSON.parse(JSON.stringify(T.days[oi].items)), tO = T, r0 = optimizeTrip(T, { only: oi, days: false }); if (r0.days) { touch(); toastUndo('DAY ' + (oi + 1) + ' 동선을 정리했어요 · ' + pathKm(keepD, null, null).toFixed(1) + 'km → ' + pathKm(T.days[oi].items, null, null).toFixed(1) + 'km', function(){ if (T !== tO) return; T.days[oi].items = keepD; touch(); renderTrip(); }); } else toast('지금 순서가 이미 가장 짧아요'); return; }
   var vb = e.target.closest('[data-vme]'); if (vb) { var vi = T.days[curDay].items[+vb.getAttribute('data-vme')]; if (vi && vi.v) { if (vi.v.s === 'closed') { vi.v.was = 'closed'; vi.v.s = 'me'; } else if (vi.v.s === 'me') { vi.v.s = vi.v.was === 'closed' ? 'closed' : 'no'; delete vi.v.was; } else vi.v.s = 'me'; touch(); } return; }
   if (e.target.closest('[data-vfix]')) { fixPlaces(); return; }
   if (e.target.closest('[data-hfix]')) { fixHours(); return; }
@@ -2237,6 +2258,67 @@ $('startDate').addEventListener('change', function(){ if (!T) return; T.startDat
 $('saveExample').addEventListener('click', function(){ if (!T || !profile) return; T.example = false; T.createdAt = Date.now(); tripId = null; saveTrip(true); renderTrip(); setStatus('saving'); });
 
 var CHANGED = null, CHANGED_FOR = null, ARM_T = 0, REF_UNDO = null, REF_PREWISH = null;
+// a request that only moves one stop to one clock time: { di, it, time } or null
+// "회산장칼국수 다음 12시에 스튜디오 시호일 넣어줘" — the traveller names the place and the time: add it at once, no AI.
+// The map check that runs afterwards confirms the place and its kind. Anything vaguer ("카페 하나 추천해서") goes to the AI.
+function quickAdd(t, req){
+  var r = String(req || '').trim();
+  if (!/(넣어|추가|끼워|넣자|넣고 싶)/.test(r) || /(추천|근처|아무|괜찮은|좋은 ?곳|어디|대신|빼|바꿔|옮겨|그리고|랑|하고 ?나서|몇 ?개|두 ?곳|세 ?곳)/.test(r)) return null;
+  var body = r.replace(/\s*(을|를)?\s*(꼭\s*)?(넣어|추가|끼워|넣자|넣고 싶)[\s\S]*$/, '').trim();
+  var di = curDay, m = body.match(/(첫\s*(번\s*)?째?\s*날|(둘|두\s*번)\s*째\s*날|(셋|세\s*번)\s*째\s*날|(넷|네\s*번)\s*째\s*날|마지막\s*날|DAY\s*\d+|\d+\s*일\s*(차|째)|\d+\s*번째\s*날)/i), dayGiven = !!m;
+  if (m) { var w = m[0], dn = w.match(/\d+/); di = /첫/.test(w) ? 0 : /둘|두/.test(w) ? 1 : /셋|세/.test(w) ? 2 : /넷|네/.test(w) ? 3 : /마지막/.test(w) ? t.days.length - 1 : +dn[0] - 1; }
+  var time = -1, tm = body.match(/(오전|오후|저녁|밤|아침|점심)?\s*(\d{1,2})\s*(?::\s*(\d{2})|시(?:\s*(\d{1,2})\s*분|\s*(반))?)(\s*(에|쯤|경|부터))?/);
+  if (tm) { var h = +tm[2], mi = tm[5] ? 30 : +(tm[3] || tm[4] || 0); if (/오후|저녁|밤/.test(tm[1] || '') && h < 12) h += 12; if (h > 23 || mi > 59) return null; time = h * 60 + mi; }
+  // the place name is what follows the last marker (time, "~ 다음", day words)
+  var cut = 0;
+  [tm, m].forEach(function(x){ if (x) cut = Math.max(cut, body.indexOf(x[0]) + x[0].length); });
+  var nx = body.match(/^.*(다음|뒤|후|전)\s*(에|으로|로)?\s*/); if (nx) cut = Math.max(cut, nx[0].length);
+  var name = body.slice(cut).replace(/^(에|에는|쯤|으로|로|는|은)\s+/, '').replace(/\s*(을|를|이|가)$/, '').replace(/^["'“‘]|["'”’]$/g, '').trim();
+  // "나나하우스 숙소" — a trailing kind word says what it is, it is not part of the name
+  var kindW = name.match(/\s+(숙소|호텔|게스트하우스|펜션|카페|식당|맛집|술집|소품샵|가게)$/); if (kindW) name = name.slice(0, -kindW[0].length).trim();
+  if (name.length < 2 || /^(카페|맛집|식당|술집|바|시장|명소|관광지|쇼핑|장소|곳|데|거기|여기)$/.test(name) || /[?？]/.test(name)) return null;
+  if (!t.days[di]) return null;
+  // already in the course: that's a move, not an add
+  var hits = []; t.days.forEach(function(d, k){ d.items.forEach(function(it){ if (it.type !== '이동' && (vSim(vParts(it).ko, name) >= 0.85 || vSim(it.q || '', name) >= 0.85)) hits.push({ di: k, it: it }); }); });
+  // a stay can be on several nights: "둘째날에도 나나하우스" adds it to that day instead of moving it
+  if (hits.length && dayGiven && hits.every(function(h){ return h.di !== di && h.it.type === '숙소'; })) { hits = []; if (!kindW) kindW = [' 숙소', '숙소']; }
+  if (hits.length) {
+    if (!t.days[di]) return null;
+    // the same place on the asked day (or the only copy): move it there at the asked time instead of adding a twin
+    var same = hits.filter(function(h){ return h.di === di; }), h0 = same[0] || (hits.length === 1 ? hits[0] : null);
+    if (!h0) return null;
+    if (time < 0) return (h0.di === di || !dayGiven) ? { already: true, di: h0.di, it: h0.it } : null;
+    return { move: true, from: h0.di, di: dayGiven ? di : h0.di, it: h0.it, time: hmR(time) };
+  }
+  // no clock time: right after the named stop
+  if (time < 0) {
+    var anchor = null, before = nx ? nx[0] : '';
+    t.days.forEach(function(d, k){ d.items.forEach(function(it){ var ko = vNorm(vParts(it).ko); if (!anchor && ko.length >= 2 && vNorm(before).indexOf(ko) >= 0) { anchor = it; di = k; } }); });
+    if (!anchor || toMin(anchor.time) < 0) return null;
+    time = toMin(anchor.time) + 75;
+  } else if (nx) {
+    t.days.forEach(function(d, k){ d.items.forEach(function(it){ var ko = vNorm(vParts(it).ko); if (ko.length >= 2 && vNorm(nx[0]).indexOf(ko) >= 0 && !m) di = k; }); });
+  }
+  var type = /카페|커피|로스터|베이커리|디저트|티하우스|찻집|테라로사|스타벅스|투썸|이디야|블루보틀|폴바셋|커피빈/.test(name) ? '카페' : /식당|국수|칼국수|맛집|횟집|갈비|순두부|국밥|막국수|분식|해장|짬뽕|초밥|고기|정육|포차/.test(name) ? '맛집' : /(엘피|LP|와인|칵테일|재즈)\s*바|펍$|술집/.test(name) ? '바' : /시장|샵$|숍$|상점|편집|기념품|소품/.test(name) ? '쇼핑' : '명소';
+  if (kindW) type = /숙소|호텔|게스트하우스|펜션/.test(kindW[1]) ? '숙소' : /카페/.test(kindW[1]) ? '카페' : /식당|맛집/.test(kindW[1]) ? '맛집' : /술집/.test(kindW[1]) ? '바' : '쇼핑';
+  return { di: di, time: hmR(time), name: name, type: type };
+}
+function quickTime(t, req){
+  var r = String(req || '');
+  if (!/시간|시에|시로|시 ?반|:\d{2}/.test(r) || !/수정|바꿔|바꾸|변경|옮겨|옮기|로 ?해|으로 ?해|맞춰/.test(r)) return null;
+  if (/그리고|하고 나서|추가|넣어|빼|삭제|대신|다른 곳|새로/.test(r.replace(/다른 건 ?(절대 )?(바꾸지|건드리지|손대지) ?마/g, ''))) return null;
+  var tm = r.match(/(\d{1,2})\s*:\s*(\d{2})/) || r.match(/(\d{1,2})\s*시(?:\s*(\d{1,2})\s*분|\s*(반))?/); if (!tm) return null;
+  var times = r.match(/\d{1,2}\s*(:\s*\d{2}|시)/g) || []; if (times.length !== 1) return null;
+  var h = +tm[1], m = tm[3] === '반' ? 30 : +(tm[2] || 0);
+  if (/오후|저녁|밤/.test(r) && h < 12) h += 12; if (h > 23 || m > 59) return null;
+  var nr = vNorm(r), hits = [];
+  t.days.forEach(function(d, di){ d.items.forEach(function(it){
+    if (it.type === '이동') return; var raw = vParts(it).ko, ko = vNorm(raw), q = vNorm(it.q || ''), core = vNorm(raw.replace(/\s*(본점|[가-힣]{1,4}점|점)$/, ''));
+    if ((ko.length >= 2 && nr.indexOf(ko) >= 0) || (q.length >= 2 && nr.indexOf(q) >= 0) || (core.length >= 2 && nr.indexOf(core) >= 0)) hits.push({ di: di, it: it });
+  }); });
+  if (hits.length !== 1) return null;
+  return { di: hits[0].di, it: hits[0].it, time: String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') };
+}
 function refineUndo(){
   var u = REF_UNDO; if (!u || !T || u.t !== T || refineCtl) return false;
   T.days = u.days; T.title = u.title; T.summary = u.summary; T.tips = u.tips; T.conditions = T.conditions || {};
@@ -2269,10 +2351,46 @@ $('refineBtn').addEventListener('click', function(){
   if (!T || demoMode) return;
   var req = $('refineInput').value.trim(), msg = $('refineMsg');
   if (!req) { msg.className = 'msg err'; msg.textContent = '무엇을 바꿀지 적어 주세요.'; $('refineInput').focus(); return; }
+  // "썬레코드 가는 시간만 21시 30분으로" — a plain time change needs no AI: done instantly, nothing else touched
+  var qt = quickTime(T, req);
+  if (qt) {
+    REF_UNDO = { t: T, days: JSON.parse(JSON.stringify(T.days)), title: T.title, summary: T.summary, tips: (T.tips || []).slice(), wish: (T.conditions || {}).wish || '', wishes: T.wishes ? JSON.parse(JSON.stringify(T.wishes)) : null };
+    var it0 = qt.it, was = it0.time; it0.time = qt.time; T.days[qt.di].items.sort(function(a, b){ return toMin(a.time) - toMin(b.time); });
+    CHANGED = new Set([qt.di + '|' + vNorm(it0.name)]); CHANGED_FOR = T; curDay = qt.di;
+    $('refineInput').value = ''; msg.className = 'msg'; msg.innerHTML = esc('요청대로 고쳤어요. ' + vParts(it0).ko + ' ' + was + '→' + qt.time + ' (DAY ' + (qt.di + 1) + '). 다른 일정은 그대로예요.') + ' <button type="button" class="linkbtn" data-refundo="1">되돌리기</button>';
+    if (REFINE_CHAT && REFINE_CHAT === C) { C.msgs.push({ who: 'bot', text: '"' + vParts(it0).ko + '" 시간을 ' + was + '에서 ' + qt.time + '(으)로 바꿨어요. 다른 일정은 그대로예요.' }); C.suggestions = ['코스 다시 보기', '방금 수정 되돌리기']; renderChat(); }
+    REFINE_CHAT = null; touch(); renderTrip(); return;
+  }
+  var qa = quickAdd(T, req);
+  if (qa && qa.already) {
+    curDay = qa.di; $('refineInput').value = ''; msg.className = 'msg'; msg.textContent = '"' + vParts(qa.it).ko + '"은(는) 이미 DAY ' + (qa.di + 1) + ' ' + qa.it.time + '에 들어가 있어요. 시간을 바꾸려면 "' + vParts(qa.it).ko + ' 20시로 바꿔줘"처럼 말해 주세요.';
+    if (REFINE_CHAT && REFINE_CHAT === C) { C.msgs.push({ who: 'bot', text: msg.textContent }); C.suggestions = ['코스 다시 보기']; renderChat(); }
+    REFINE_CHAT = null; renderTrip(); return;
+  }
+  if (qa && qa.move) {
+    REF_UNDO = { t: T, days: JSON.parse(JSON.stringify(T.days)), title: T.title, summary: T.summary, tips: (T.tips || []).slice(), wish: (T.conditions || {}).wish || '', wishes: T.wishes ? JSON.parse(JSON.stringify(T.wishes)) : null };
+    var mv = qa.it, mwas = mv.time;
+    if (qa.from !== qa.di) { var fa = T.days[qa.from].items; fa.splice(fa.indexOf(mv), 1); T.days[qa.di].items.push(mv); }
+    mv.time = qa.time; T.days[qa.di].items.sort(function(a, b){ return toMin(a.time) - toMin(b.time); });
+    CHANGED = new Set([qa.di + '|' + vNorm(mv.name)]); CHANGED_FOR = T; curDay = qa.di;
+    var mtxt = '"' + vParts(mv).ko + '"은(는) 이미 코스에 있어서 새로 넣지 않고 ' + (qa.from !== qa.di ? 'DAY ' + (qa.from + 1) + ' ' + mwas + ' → DAY ' + (qa.di + 1) + ' ' + qa.time : 'DAY ' + (qa.di + 1) + ' ' + mwas + ' → ' + qa.time) + '(으)로 옮겼어요. 다른 일정은 그대로예요.';
+    $('refineInput').value = ''; msg.className = 'msg'; msg.innerHTML = esc(mtxt) + ' <button type="button" class="linkbtn" data-refundo="1">되돌리기</button>';
+    if (REFINE_CHAT && REFINE_CHAT === C) { C.msgs.push({ who: 'bot', text: mtxt }); C.suggestions = ['코스 다시 보기', '방금 수정 되돌리기']; renderChat(); }
+    REFINE_CHAT = null; touch(); renderTrip(); return;
+  }
+  if (qa) {
+    REF_UNDO = { t: T, days: JSON.parse(JSON.stringify(T.days)), title: T.title, summary: T.summary, tips: (T.tips || []).slice(), wish: (T.conditions || {}).wish || '', wishes: T.wishes ? JSON.parse(JSON.stringify(T.wishes)) : null };
+    var na = { time: qa.time, name: qa.name, q: qa.name, type: qa.type, why: '직접 넣은 곳', note: '' };
+    T.days[qa.di].items.push(na); T.days[qa.di].items.sort(function(a, b){ return toMin(a.time) - toMin(b.time); });
+    CHANGED = new Set([qa.di + '|' + vNorm(na.name)]); CHANGED_FOR = T; curDay = qa.di;
+    $('refineInput').value = ''; msg.className = 'msg'; msg.innerHTML = esc('바로 넣었어요: DAY ' + (qa.di + 1) + ' ' + qa.time + ' ' + qa.name + '. 다른 일정은 그대로예요. 지도에서 위치와 종류를 확인하는 중이에요.') + ' <button type="button" class="linkbtn" data-refundo="1">되돌리기</button>';
+    if (REFINE_CHAT && REFINE_CHAT === C) { C.msgs.push({ who: 'bot', text: '"' + qa.name + '"을(를) DAY ' + (qa.di + 1) + ' ' + qa.time + '에 넣었어요. 다른 일정은 그대로예요.' }); C.suggestions = ['코스 다시 보기', '방금 수정 되돌리기']; renderChat(); }
+    REFINE_CHAT = null; touch(); renderTrip(); return;
+  }
   if (aiMode() === 'none') { msg.className = 'msg err'; msg.textContent = ERR.no_ai; return; }
   var current = { title: T.title, summary: T.summary, days: T.days.map(function(d){ return { title: d.title, items: d.items.map(function(it){ return { time: it.time, name: it.name, q: it.q || '', type: it.type, wish: it.wish || '', why: it.why || '', note: it.note, price: it.pa || '' }; }) }; }), tips: T.tips };
   var prompt = '너는 한국인 여행자를 위한 여행 큐레이터야. 오늘은 ' + todayStr() + '이야.\n여행지: ' + T.city + ', ' + T.country + ' · ' + T.nights + '박 ' + T.days.length + '일' + (T.startDate ? ' · 출발 ' + T.startDate : '') + '\n여행자 조건:\n' + condText(T.conditions || {}) +
-    '\n\n지금 코스(JSON):\n' + JSON.stringify(current).slice(0, 20000) + '\n\n여행자의 수정 요청: "' + req + '"\n\n요청을 반영해 코스를 고쳐 줘. 가장 중요한 규칙: 수정 요청이 직접 가리키는 일정만 바꿔. 나머지 일정은 name·q·type·why·note·time과 날짜·순서까지 그대로 복사해(새 일정을 넣느라 시간이 겹칠 때만 바로 앞뒤 일정의 시간을 조금 밀어). 요청에 없는 장소를 다른 곳으로 바꾸거나, 빼거나, 다른 날로 옮기지 마. 요청이 시간대를 정했으면(예: 시장은 저녁에) 그 시간을 지켜. title·summary·tips도 바뀐 부분만 고쳐. 아래 식사·리듬 규칙은 새로 넣거나 옮기는 일정에만 적용해. 취향과 여행 스타일은 계속 지켜. 식사(맛집)는 하루 점심 1번(11:30~13:30)과 저녁 1번(18:00~20:00)이 기본이야. 맛집 두 곳을 연달아 두거나 식사 사이를 4시간보다 짧게 두지 마(간식·디저트는 카페나 쇼핑으로 짧게). 아침은 숙소 근처에서 가볍게 하거나 생략해. 오전엔 명소·체험, 점심 뒤엔 카페나 가벼운 산책, 저녁 뒤엔 야경·바·휴식처럼 하루 리듬을 자연스럽게 만들어. 실제로 있는 장소만 쓰고(지어내지 말 것), 한 일정에는 장소 하나만(name과 q는 같은 곳의 정확한 이름, 두 장소 이름을 섞지 말고 type도 그 장소의 실제 종류로(포장마차·요리주점·이자카야처럼 식사하는 곳을 점심·저녁 식사로 넣으면 맛집, 술 마시러 가는 곳만 바)) 새 장소에는 q(지도 검색용 공식 이름)를 꼭 넣어. 가격은 쓰지 마. 같은 형식의 JSON 하나로만 답해: {"title":"","summary":"","days":[{"title":"","items":[{"time":"","pid":"","name":"","q":"","type":"","wish":"","why":"","note":"","price":""}]}],"tips":[]} — days는 정확히 ' + T.days.length + '개.';
+    '\n\n지금 코스(JSON):\n' + JSON.stringify(current).slice(0, 20000) + '\n\n여행자의 수정 요청: "' + req + '"\n\n요청을 반영해 코스를 고쳐 줘. 새로 넣는 장소는 아래 실제 장소 후보 목록에서 골라 pid(번호)를 적어. 목록에 없는 이름은 지어내지 마. 단, 여행자가 특정 가게·지점 이름을 직접 말했으면(예: "테라로사 경포호점") 후보에 없어도 그 가게를 넣고, name과 q에 그 가게의 정확한 이름을 적어(비슷한 다른 장소의 pid를 붙이지 마). 가장 중요한 규칙: 수정 요청이 직접 가리키는 일정만 바꿔. 나머지 일정은 name·q·type·why·note·time과 날짜·순서까지 그대로 복사해(새 일정을 넣느라 시간이 겹칠 때만 바로 앞뒤 일정의 시간을 조금 밀어). 요청에 없는 장소를 다른 곳으로 바꾸거나, 빼거나, 다른 날로 옮기지 마. 특히 \"넣어 줘·추가해 줘\" 요청은 기존 일정을 하나도 빼지 말고 새 장소를 더하기만 해(같은 종류가 이미 있어도 둘 다 남겨). 요청이 시간대를 정했으면(예: 시장은 저녁에) 그 시간을 지켜. title·summary·tips도 바뀐 부분만 고쳐. 아래 식사·리듬 규칙은 새로 넣거나 옮기는 일정에만 적용해. 취향과 여행 스타일은 계속 지켜. 식사(맛집)는 하루 점심 1번(11:30~13:30)과 저녁 1번(18:00~20:00)이 기본이야. 맛집 두 곳을 연달아 두거나 식사 사이를 4시간보다 짧게 두지 마(간식·디저트는 카페나 쇼핑으로 짧게). 아침은 숙소 근처에서 가볍게 하거나 생략해. 오전엔 명소·체험, 점심 뒤엔 카페나 가벼운 산책, 저녁 뒤엔 야경·바·휴식처럼 하루 리듬을 자연스럽게 만들어. 실제로 있는 장소만 쓰고(지어내지 말 것), 한 일정에는 장소 하나만(name과 q는 같은 곳의 정확한 이름, 두 장소 이름을 섞지 말고 type도 그 장소의 실제 종류로(포장마차·요리주점·이자카야처럼 식사하는 곳을 점심·저녁 식사로 넣으면 맛집, 술 마시러 가는 곳만 바)) 새 장소에는 q(지도 검색용 공식 이름)를 꼭 넣어. 가격은 쓰지 마. 같은 형식의 JSON 하나로만 답해: {"title":"","summary":"","days":[{"title":"","items":[{"time":"","pid":"","name":"","q":"","type":"","wish":"","why":"","note":"","price":""}]}],"tips":[]} — days는 정확히 ' + T.days.length + '개.';
   refineCtl = new AbortController();
   $('refineBtn').disabled = true; $('refineStop').hidden = false; msg.className = 'msg'; msg.textContent = '코스를 고치는 중… 보통 30~60초 걸려요';
   var tgt = T, myCtl = refineCtl, rPool = null, t0 = Date.now();
@@ -2280,26 +2398,33 @@ $('refineBtn').addEventListener('click', function(){
   var tick = setInterval(function(){
     if (refineCtl !== myCtl) { clearInterval(tick); return; }
     var sec = Math.round((Date.now() - t0) / 1000);
-    msg.textContent = sec < 75 ? '코스를 고치는 중… ' + sec + '초 (보통 30~60초)' : 'AI 답이 평소보다 늦어요… ' + sec + '초 · 붐비면 다른 AI로 바꿔 다시 물어보고 있어요. 계속 늦으면 "멈추기" 후 잠시 뒤 다시 보내 주세요.';
+    msg.textContent = sec < 50 ? '코스를 고치는 중… ' + sec + '초 (보통 30~60초)' : 'AI 답이 평소보다 늦어요… ' + sec + '초 · 붐비면 다른 AI로 바꿔 다시 물어보고 있어요. 계속 늦으면 "멈추기" 후 잠시 뒤 다시 보내 주세요.';
   }, 1000);
+  // last safety net: never leave the course stuck in "고치는 중" (the AI request itself gives up at 4.5 minutes)
+  var dog = setTimeout(function(){ if (refineCtl !== myCtl) return; myCtl.late = true; try { myCtl.abort(); } catch(e){} clearInterval(tick); refineCtl = null; if (REFINE_CHAT && REFINE_CHAT === C) { C.msgs.push({ who: 'bot', text: '코스를 고치지 못했어요: ' + (ERR.timeout || '시간 초과') }); renderChat(); } REFINE_CHAT = null; $('refineBtn').disabled = demoMode; $('refineStop').hidden = true; msg.className = 'msg err'; msg.textContent = ERR.timeout || 'AI 답이 너무 오래 걸려서 멈췄어요. 다시 보내 주세요.'; if (T) renderTrip(); }, 300000);
   var auto = /^DAY \d+.*비 소식|영업하지 않아|^아래 장소들이/.test(req), newW = auto ? [] : wishFromText(req), oldWish = (T.conditions || {}).wish || '', preWish = REF_PREWISH != null ? REF_PREWISH : oldWish; REF_PREWISH = null;
   if (newW.length) { T.conditions = T.conditions || {}; T.conditions.wish = mergeWish(oldWish, newW.join(', ')); }
   poolWait(T.city, T, 9000).then(function(pool){ rPool = pool; if (myCtl.signal.aborted) throw { code: 'cancelled' }; return sunWait(tgt).then(function(){ return aiJson(prompt.replace('\n\n여행자의 수정 요청:', condWishLine(T) + sunPromptLine(tgt) + '\n\n여행자의 수정 요청:') + poolText(pool, 'refine'), myCtl.signal); }); }).then(function(data){
-    clearInterval(tick); if (T !== tgt) return;
+    clearInterval(tick); if (T !== tgt || myCtl.late) return;
     if (!data || !Array.isArray(data.days)) throw { code: 'invalid_json' };
     var before = T.days.map(function(d){ return d.items.map(function(it){ return vNorm(it.name); }); });
     REF_UNDO = { t: T, days: JSON.parse(JSON.stringify(T.days)), title: T.title, summary: T.summary, tips: (T.tips || []).slice(), wish: preWish, wishes: T.wishes ? JSON.parse(JSON.stringify(T.wishes)) : null };
     // only wishes named in this request may push a place in; route order is not reshuffled (it would undo "시장은 저녁에")
     var preK = String(preWish).split(/\s*[,，]\s*/).map(wishKey).filter(Boolean);
     var newKeys = String((T.conditions || {}).wish || '').split(/\s*[,，]\s*/).map(wishKey).filter(function(k){ return k && preK.indexOf(k) < 0; });
-    T.days = keepChecks(enforceWishes(applyPool(normalizeDays(data.days, T.days.length), rPool), rPool, newKeys), T.days); wishReport(T, rPool); var ro = { days: 0 };
+    var newDays = applyPool(normalizeDays(data.days, T.days.length), rPool), swapped = poolSwap(newDays, [].concat.apply([], before), rPool, req);
+    T.days = keepChecks(enforceWishes(newDays, rPool, newKeys), T.days);
+    var kept = addOnly(req) ? keepOnAdd(T.days, REF_UNDO.days) : 0;
+    wishReport(T, rPool); var ro = { days: 0 };
     if (data.title) T.title = String(data.title); if (data.summary) T.summary = String(data.summary);
     if (Array.isArray(data.tips) && data.tips.length) T.tips = data.tips.slice(0, isDom(T) ? 3 : 6).map(String);
     var chg = refineDiff(before, T); CHANGED = chg.keys; CHANGED_FOR = T; if (chg.first >= 0) curDay = chg.first;
+    if (kept) chg.text += ' "추가" 요청이라 AI가 빼려던 ' + kept + '곳은 그대로 두었어요.';
+    if (swapped) chg.text += ' AI가 지도에 없는 곳을 골라서 ' + swapped + '곳은 지도에서 확인된 가까운 곳으로 바꿨어요.';
     $('refineInput').value = ''; msg.innerHTML = esc('요청대로 고쳤어요. ' + chg.text + (ro.days ? ' 동선도 다시 정리했어요.' : '')) + (chg.first >= 0 ? ' <button type="button" class="linkbtn" data-seechg="1">바뀐 일정 보기</button>' : '') + ' <button type="button" class="linkbtn" data-refundo="1">되돌리기</button>';
     if (REFINE_CHAT && REFINE_CHAT === C) { C.msgs.push({ who: 'bot', text: '요청대로 "' + T.title + '" 코스를 고쳤어요. ' + chg.text + (T.wishes && T.wishes.length ? ' 꼭 원하는 곳 반영 결과도 코스 화면에서 확인해 보세요.' : '') }); C.suggestions = ['코스 다시 보기', '방금 수정 되돌리기']; renderChat(); } REFINE_CHAT = null; armedDel = -1; touch();
-  }).catch(function(e){ clearInterval(tick); if (tgt.conditions && (tgt.conditions.wish || '') !== preWish) { if (preWish) tgt.conditions.wish = preWish; else delete tgt.conditions.wish; } if (REFINE_CHAT && REFINE_CHAT === C) { C.msgs.push({ who: 'bot', text: e && e.code === 'cancelled' ? '코스 수정을 멈췄어요.' : '코스를 고치지 못했어요: ' + errText(e) }); renderChat(); } REFINE_CHAT = null; if (e && e.code === 'cancelled') { msg.textContent = '수정을 멈췄어요.'; return; } msg.className = 'msg err'; msg.textContent = errText(e); })
-    .then(function(){ clearInterval(tick); if (refineCtl === myCtl) { refineCtl = null; REFINE_CHAT = null; $('refineBtn').disabled = demoMode; $('refineStop').hidden = true; if (T) renderTrip(); } });
+  }).catch(function(e){ clearInterval(tick); if (tgt.conditions && (tgt.conditions.wish || '') !== preWish) { if (preWish) tgt.conditions.wish = preWish; else delete tgt.conditions.wish; } if (myCtl.late) return; if (REFINE_CHAT && REFINE_CHAT === C) { C.msgs.push({ who: 'bot', text: e && e.code === 'cancelled' ? '코스 수정을 멈췄어요.' : '코스를 고치지 못했어요: ' + errText(e) }); renderChat(); } REFINE_CHAT = null; if (e && e.code === 'cancelled') { msg.textContent = '수정을 멈췄어요.'; return; } msg.className = 'msg err'; msg.textContent = errText(e); })
+    .then(function(){ clearInterval(tick); clearTimeout(dog); if (refineCtl === myCtl) { refineCtl = null; REFINE_CHAT = null; $('refineBtn').disabled = demoMode; $('refineStop').hidden = true; if (T) renderTrip(); } });
 });
 
 // ---------- prices of places: Google price range → Wikivoyage listing → AI estimate ----------
@@ -2523,7 +2648,7 @@ function buyAdd(i){
   var at = lastMove > 0 ? Math.max(600, lastMove - 90) : 960, used = items.map(function(it){ return toMin(it.time); });
   while (used.indexOf(at) >= 0) at += 30;
   var it = { time: hmR(at), name: x.at.name, q: x.at.name, type: '쇼핑', why: x.item + ' 사기', note: x.tip || '', ll: [x.at.lat, x.at.lon] };
-  it.v = cleanV({ s: 'ok', k: vKey(it), n: x.at.name, lat: x.at.lat, lon: x.at.lon, u: x.at.u, src: x.at.src, ty: '쇼핑', cv: 2 });
+  it.v = cleanV({ s: 'ok', k: vKey(it), n: x.at.name, lat: x.at.lat, lon: x.at.lon, u: x.at.u, src: x.at.src, ty: '쇼핑', cv: 4 });
   items.push(it); items.sort(function(a, c){ return toMin(a.time) - toMin(c.time); });
   curDay = di; touch(); renderTrip(); toast('DAY ' + (di + 1) + ' ' + it.time + '에 "' + x.at.name + '"을(를) 넣었어요');
 }
@@ -3634,7 +3759,21 @@ function routeLine(d, i){
   var st = stayLL(T), dist = pathKm(d.items, null, null);
   var stops = (st ? [st] : []).concat(pts).concat(st ? [st] : []).slice(0, 11);
   var url = 'https://www.google.com/maps/dir/' + stops.map(function(p){ return p[0].toFixed(5) + ',' + p[1].toFixed(5); }).join('/') + '/';
-  return '<div class="routeline"><span>이동 거리 약 ' + (dist < 10 ? dist.toFixed(1) : Math.round(dist)) + 'km <small style="color:var(--muted)">(장소 사이 직선 기준' + (st ? ', 숙소 왕복 제외' : '') + ')</small></span><a href="' + url + '" target="_blank" rel="noopener">이 순서로 경로 보기</a>' + (demoMode || T.example ? '' : '<button type="button" class="chipbtn" data-optday="' + i + '">동선 다시 정리</button>') + '</div>';
+  // a clearly shorter order exists (e.g. going south and back again): say so right here, with the saving
+  var better = demoMode || T.example ? null : betterRoute(d, st), fmt = function(x){ return x < 10 ? x.toFixed(1) : String(Math.round(x)); };
+  return '<div class="routeline' + (better ? ' warn' : '') + '"><span>이동 거리 약 ' + fmt(dist) + 'km <small style="color:var(--muted)">(장소 사이 직선 기준' + (st ? ', 숙소 왕복 제외' : '') + ')</small>' + (better ? '<small class="rbetter">순서를 바꾸면 약 ' + fmt(better.km) + 'km로 줄어요 · ' + esc(better.hint) + '</small>' : '') + '</span><a href="' + url + '" target="_blank" rel="noopener">이 순서로 경로 보기</a>' + (demoMode || T.example ? '' : '<button type="button" class="' + (better ? 'secondary' : 'chipbtn') + '" data-optday="' + i + '">' + (better ? '동선 정리하기' : '동선 다시 정리') + '</button>') + '</div>';
+}
+var BR = {};
+function betterRoute(d, st){
+  var key = d.items.map(function(it){ var p = itLL(it); return (it.time || '') + (p ? p[0].toFixed(4) + ',' + p[1].toFixed(4) : '-') + (it.done ? 'd' : ''); }).join('|') + (st ? st.join(',') : '');
+  if (key in BR) return BR[key];
+  var now = pathKm(d.items, null, null), r = optimizeDay(d.items, st, st), out = null;
+  if (r.changed) { var after = pathKm(r.items, null, null); if (now - after >= 3 && after <= now * 0.75) {
+    var moved = r.items.filter(function(it, k){ return vNorm(it.name) !== vNorm(d.items[k].name); }).map(function(it){ return vParts(it).ko; });
+    out = { km: after, hint: moved.slice(0, 2).join(', ') + (moved.length > 2 ? ' 등' : '') + '의 순서를 바꿔요' };
+  } }
+  var ks = Object.keys(BR); if (ks.length > 50) delete BR[ks[0]];
+  return BR[key] = out;
 }
 
 
@@ -4259,6 +4398,56 @@ function poolText(pool, mode, keep){
     wishRules(pool) + '\n\n규칙: 명소·맛집·카페·바·쇼핑·체험 일정은 이 후보 중에서 여행자 조건(취향·스타일·동행·예산)에 가장 잘 맞는 곳을 골라. 평점(★)과 리뷰 수가 정보에 있으면 그게 가장 중요한 근거야: 같은 조건이면 ★4.5 이상·리뷰 많은 곳을 먼저, ★4.2 미만이거나 리뷰 수십 개뿐인 곳은 조건에 꼭 맞을 때만. 맛집은 가격대가 예산에 맞고 소개가 취향과 맞는 곳을, 끼니마다 다른 음식 종류로 골고루. 여러 출처에 함께 나온 곳(정보가 풍부한 곳)이 더 믿을 만해. 고른 곳은 pid에 번호를 적고, name은 "한국어 이름 (후보의 이름)"으로 써. 같은 날 일정은 좌표가 가까운 곳끼리 묶고(하루 이동이 짧게, 같은 동네를 오가지 않게), 순서는 지그재그 없이 한 방향으로 이어지게 해. 후보에 맞는 곳이 정말 없을 때만 후보 밖의, 지금도 영업 중인 게 확실한 유명한 곳을 쓰고 pid는 빈 문자열로 둬. 후보 이름을 바꾸거나 지어내지 마. 한 일정에는 장소 하나만 — name과 q는 같은 곳의 정확한 이름이어야 하고 두 장소 이름을 섞지 마(예: 카페 이름 + 시장 이름 ✗), type도 그 장소의 실제 종류로(포장마차·요리주점·이자카야처럼 식사하는 곳을 점심·저녁 식사로 넣으면 맛집, 술 마시러 가는 곳만 바). why에는 그 장소가 이 여행자 조건의 어느 부분과 맞는지 짧게 적어(예: "미식 취향 · 현지인 노포").';
 }
 // attach real map data to stops the AI picked from the pool; fixes names, types and wrong picks
+// stops a course edit added that are not in the verified pool (the AI made the name up): use the best real
+// place of the same kind near that day's other stops instead
+// "넣어 줘 / 추가해 줘" only adds: nothing already planned may disappear (the AI likes to swap 오어즈 for 삶은 감자)
+function addOnly(req){
+  var r = String(req || '');
+  return /(넣어|추가|끼워|넣자|넣고 ?싶|더 ?넣)/.test(r) && !/(빼|대신|바꿔|바꾸|교체|삭제|말고|없애|지워|줄여|느긋하게|여유롭게|전체|다시 ?짜|옮겨|옮기)/.test(r);
+}
+function keepOnAdd(days, was){
+  var n = 0, has = function(o){ var a = vNorm(vParts(o).ko), q = vNorm(o.q || ''); return days.some(function(d){ return d.items.some(function(it){ var b = vNorm(vParts(it).ko); return b === a || (q && vNorm(it.q || '') === q) || vSim(b, a) >= 0.9; }); }); };
+  (was || []).forEach(function(d, di){
+    if (!days[di]) return;
+    d.items.forEach(function(o){
+      if (/^(이동|숙소)$/.test(o.type) || has(o)) return;
+      var back = JSON.parse(JSON.stringify(o)), items = days[di].items;
+      // the newcomer took this stop's slot: give the newcomer the next free half hour
+      items.forEach(function(it){ if (it.time === back.time) { var t = toMin(it.time) + 60; while (items.some(function(x){ return toMin(x.time) === t; })) t += 30; it.time = hmR(Math.min(t, 1410)); } });
+      items.push(back); n++;
+    });
+    days[di].items.sort(function(a, b){ return toMin(a.time) - toMin(b.time); });
+  });
+  return n;
+}
+function poolSwap(days, beforeNames, pool, req){
+  if (!pool || !pool.list) return 0;
+  var used = {}, n = 0; days.forEach(function(d){ d.items.forEach(function(it){ used[vNorm(it.q || vParts(it).ko)] = 1; used[vNorm(vParts(it).ko)] = 1; }); });
+  days.forEach(function(d){
+    var pts = d.items.map(itLL).filter(Boolean), anchor = pts.length ? [pts.reduce(function(a, p){ return a + p[0]; }, 0) / pts.length, pts.reduce(function(a, p){ return a + p[1]; }, 0) / pts.length] : pool.ll;
+    d.items.forEach(function(it){
+      if (it.ll || beforeNames.indexOf(vNorm(it.name)) >= 0 || !/^(명소|맛집|카페|바|쇼핑|체험)$/.test(it.type) || !vWanted(it)) return;
+      // a place the traveller named ("테라로사 경포호점") stays — the map check finds its real entry afterwards
+      if (userNamed(it, req)) return;
+      var cands = pool.list.filter(function(p){ return p.cat === it.type && p.lat != null && !used[vNorm(p.name)] && !(p.ko && used[vNorm(p.ko)]); });
+      if (!cands.length) return;
+      var score = function(p){ var dk = anchor ? distKm(anchor, [p.lat, p.lon]) : 0; return (dk <= 8 ? 0 : dk) - (p.sc || 0) - (p.wish ? 5 : 0); };
+      cands.sort(function(a, b){ return score(a) - score(b); });
+      var p = cands[0], ko = p.ko || (pool.dom ? p.name : '') || p.name;
+      it.name = pool.dom ? p.name : (vNorm(ko) === vNorm(p.name) ? p.name : ko + ' (' + p.name + ')'); it.q = p.name; it.ll = [+(+p.lat).toFixed(5), +(+p.lon).toFixed(5)];
+      if (p.rating) it.rt = String(p.rating).replace(/^Google /, ''); else delete it.rt;
+      if (p.gprice && p.gprice.lo) it.pr = { s: 'google', cur: p.gprice.cur, lo: p.gprice.lo, hi: p.gprice.hi || 0 }; else delete it.pr;
+      it.why = '요청하신 ' + it.type + ' 중 지도에서 확인된 곳으로 골랐어요' + (p.sub ? ' · ' + p.sub : ''); delete it.v; delete it.wev; delete it.wish;
+      used[vNorm(p.name)] = 1; n++;
+    });
+  });
+  return n;
+}
+function userNamed(it, req){
+  var r = vNorm(req || ''); if (!r) return false;
+  var words = vParts(it).ko.split(/\s+/).concat((it.q || '').split(/\s+/)).filter(function(w){ return w.length >= 2 && !/^(카페|맛집|식당|레스토랑|바|펍|해변|시장|공원|호텔|숙소|커피|베이커리|본점|분점|지점|[가-힣]{1,3}점)$/.test(w); });
+  return words.some(function(w){ return r.indexOf(vNorm(w)) >= 0; });
+}
 function applyPool(days, pool){
   if (!pool) { days.forEach(function(d){ d.items.forEach(function(it){ delete it.pid; }); }); return days; }
   var gKey = !!window.MT_PLACE_GOOGLE;
@@ -4267,7 +4456,7 @@ function applyPool(days, pool){
     var parts = vParts(it), mine = [it.q, parts.loc, parts.ko].filter(Boolean);
     var p = pid && pool.map[String(pid).toUpperCase()];
     var fit = function(c){ return Math.max.apply(null, mine.map(function(n){ return Math.max(vSim(n, c.name), c.ko ? vSim(n, c.ko) : 0); }).concat([0])); };
-    if (p && fit(p) < 0.5) p = null; // the number and the name disagree: don't trust the number
+    if (p && fit(p) < 0.6) p = null; // the number and the name disagree: don't trust the number
     if (!p && vWanted(it)) { var best = null, bs = 0; pool.list.forEach(function(c){ var x = fit(c); if (x > bs) { bs = x; best = c; } }); if (bs >= 0.75) p = best; }
     if (!p) return;
     var ko = p.ko || (pool.dom ? p.name : parts.ko) || p.name;
@@ -4287,11 +4476,32 @@ function applyPool(days, pool){
   }); });
   return days;
 }
+// the AI describes a place from its name alone ("스튜디오 시호일" → "감성 사진관"); when its description names a
+// kind of place the map disagrees with, say what the map says instead
+var WHY_KINDS = [
+  { re: /사진관|포토\s?스튜디오|사진\s?촬영|셀프\s?사진/, ok: /사진|포토|스튜디오/ },
+  { re: /카페|커피|디저트/, ok: /카페|커피|디저트|베이커리|제과|cafe|coffee|bakery/i, ty: '카페' },
+  { re: /식당|맛집|요리|국수|고깃집|횟집|향토 ?음식|밥집/, ok: /음식|식당|맛집|restaurant|food/i, ty: '맛집' },
+  { re: /LP ?바|엘피바|와인바|칵테일|펍|술집|이자카야/, ok: /술집|주점|바|펍|bar|pub/i, ty: '바' },
+  { re: /소품|편집 ?[샵숍]|기념품|잡화|쇼핑|시장/, ok: /소품|편집|기념품|선물|잡화|생활용품|시장|쇼핑|문구|인테리어|공예|store|shop|market/i, ty: '쇼핑' },
+  { re: /박물관|미술관|전시/, ok: /박물관|미술관|전시|갤러리|museum|gallery/i },
+  { re: /해변|해수욕장|바다 ?산책/, ok: /해수욕장|해변|beach/i }
+];
+function whyFix(it, v){
+  if (!v || v.s !== 'ok' || !v.ty || !it.why) return;
+  var map = v.ty + ' ' + (v.sub || ''), said = WHY_KINDS.filter(function(k){ return k.re.test(it.why); });
+  if (!said.length || said.some(function(k){ return k.ok.test(map) || (k.ty && k.ty === v.ty); })) return;
+  // the description already names what the map says (월화거리: "기념품 샵과 테마거리") — it is just describing more
+  if (String(v.sub || '').split(/[\s,>·]+/).some(function(w){ return w.length >= 2 && it.why.indexOf(w) >= 0; })) return;
+  var lead = (String(it.why).match(/^(여행자 요청 반영|여행자의 요청|직접 넣은 곳)/) || [''])[0];
+  it.why = (lead ? '여행자 요청 · ' : '') + (v.sub || v.ty) + (v.sub && v.sub !== v.ty ? ' (' + v.ty + ')' : '') + ' · 설명은 지도 분류에 맞춰 고쳤어요';
+}
 function officialName(it, dom){
   var v = it.v; if (!v || v.s === 'no' || !v.n) return;
   // the map's kind of place wins over the AI's label (a cafe is not "쇼핑" just because the plan said market)
   if (v.tyb && /^(명소|맛집|카페|쇼핑|체험|바)$/.test(it.type)) it.type = mixType(it.type, it.time);
   else if (v.ty && /^(명소|맛집|카페|쇼핑|체험|바)$/.test(it.type) && it.type !== v.ty && !(/^(명소|체험)$/.test(it.type) && /^(명소|체험)$/.test(v.ty))) it.type = v.ty;
+  whyFix(it, v);
   var parts = vParts(it), shownOk = vNorm(parts.ko) === vNorm(v.n) || vNorm(parts.loc) === vNorm(v.n);
   if (shownOk && vNorm(it.q || '') === vNorm(v.n)) return;
   var pre = (String(it.name || '').match(/^(체크인|체크아웃|숙소) · /) || [''])[0];
@@ -4305,15 +4515,28 @@ function officialName(it, dom){
 var VC = { run: null, fail: false, src: '' };
 var V_SKIP = /^(이동|숙소|휴식)$/;
 var V_GENERIC = /(현지|근처|주변|일대|자유|아무|숙소|호텔 ?(체크|휴식)|체크인|체크아웃|공항|출발|도착|귀가|이동|산책로? ?걷기|시내 ?구경|야경 ?감상|휴식)/;
-function cleanV(v){ if (!v || typeof v !== 'object' || ['ok', 'no', 'me', 'closed'].indexOf(v.s) < 0) return null; var o = { s: v.s, k: String(v.k || '').slice(0, 120) }; if (/^(명소|맛집|카페|쇼핑|체험|바)$/.test(v.ty || '')) o.ty = v.ty; if (v.tyx) o.tyx = 1; if (v.tyb) o.tyb = 1; if (v.cv) o.cv = num(v.cv); if (v.n) o.n = String(v.n).slice(0, 80); if (isFinite(parseFloat(v.lat)) && isFinite(parseFloat(v.lon))) { o.lat = +(+v.lat).toFixed(5); o.lon = +(+v.lon).toFixed(5); } if (v.u && /^https:\/\/(place\.map\.kakao\.com|www\.openstreetmap\.org|maps\.google\.com|www\.google\.com\/maps)\//.test(v.u)) o.u = String(v.u); if (v.src) o.src = ['kakao', 'google'].indexOf(v.src) >= 0 ? v.src : 'osm'; if (v.t === 'temp') o.t = 'temp'; if (v.gid && /^[A-Za-z0-9_-]{10,}$/.test(v.gid)) o.gid = String(v.gid); if (v.s === 'no') o.at = num(v.at) || Date.now(); if (v.was === 'closed') o.was = 'closed'; return o; }
+function cleanV(v){ if (!v || typeof v !== 'object' || ['ok', 'no', 'me', 'closed'].indexOf(v.s) < 0) return null; var o = { s: v.s, k: String(v.k || '').slice(0, 120) }; if (/^(명소|맛집|카페|쇼핑|체험|바)$/.test(v.ty || '')) o.ty = v.ty; if (v.tyx) o.tyx = 1; if (v.tyb) o.tyb = 1; if (v.cv) o.cv = num(v.cv); if (v.sub) o.sub = String(v.sub).slice(0, 30); if (v.n) o.n = String(v.n).slice(0, 80); if (isFinite(parseFloat(v.lat)) && isFinite(parseFloat(v.lon))) { o.lat = +(+v.lat).toFixed(5); o.lon = +(+v.lon).toFixed(5); } if (v.u && /^https:\/\/(place\.map\.kakao\.com|www\.openstreetmap\.org|maps\.google\.com|www\.google\.com\/maps)\//.test(v.u)) o.u = String(v.u); if (v.src) o.src = ['kakao', 'google'].indexOf(v.src) >= 0 ? v.src : 'osm'; if (v.t === 'temp') o.t = 'temp'; if (v.gid && /^[A-Za-z0-9_-]{10,}$/.test(v.gid)) o.gid = String(v.gid); if (v.s === 'no') o.at = num(v.at) || Date.now(); if (v.was === 'closed') o.was = 'closed'; return o; }
 function vParts(it){ var n = String(it.name || '').trim().replace(/^(체크인|체크아웃|숙소) · /, ''), m = n.match(/^(.*?)\s*[(（]([^()（）]+)[)）]\s*$/); return { ko: (m ? m[1] : n).trim(), loc: m ? m[2].trim() : '' }; }
 function vKey(it){ return (String(it.q || '') + '|' + String(it.name || '')).trim().toLowerCase(); }
 function vWanted(it){ if (it.ev) return false; if (V_SKIP.test(String(it.type || '')) && !(it.type === '숙소' && /^(체크인|체크아웃|숙소) · /.test(String(it.name || '')))) return false; var p = vParts(it); if (!it.q && !p.loc && V_GENERIC.test(p.ko)) return false; return (it.q || p.loc || p.ko).length >= 2; }
 function keepChecks(days, old){ var map = {}; old.forEach(function(d){ d.items.forEach(function(it){ if (it.v || it.ll) map[vKey(it)] = it; }); }); days.forEach(function(d){ d.items.forEach(function(it){ var o = map[vKey(it)]; if (o && !it.v) it.v = o.v; if (o && o.done) it.done = true; if (o && o.ll && !it.ll) it.ll = o.ll; if (o && o.rt && !it.rt) it.rt = o.rt; if (o && o.pr && !it.pr) it.pr = o.pr; if (o && o.wev && !it.wev && num(o.wish) === num(it.wish)) it.wev = o.wev; }); }); return days; }
 function vNorm(x){ return String(x || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[\s·・\-–_'’".,()（）\[\]&/!?:;]+/g, ''); }
+// one name inside another: the same place only when the extra part is a branch / kind word or a short
+// region name ("보사노바 커피로스터스" ~ "… 강릉점", "해운대" ~ "해운대해수욕장", "중앙시장" ~ "강릉중앙시장"),
+// not a different business that merely carries the place's name ("테라로사 경포호점" is not the lake "경포호")
+var V_KIND = /^(점|본점|지점|직영점|[가-힣]{1,4}점|해수욕장|해변|비치|시장|전통시장|공원|호수|수|역|기차역|터미널|타워|전망대|성당|사|사찰|박물관|미술관|거리|마을|섬|항|포구|해안|해안길|산|폭포|계곡|호|강|천|beach|park|station|market|tower|temple|museum|branch|store|shop)$/i;
+function vContain(a, b){
+  var A = a.normalize('NFC'), B = b.normalize('NFC'), S = A.length <= B.length ? A : B, L = S === A ? B : A, i = L.indexOf(S);
+  if (i < 0) return 0.5;
+  var pre = L.slice(0, i), post = L.slice(i + S.length), ratio = S.length / L.length;
+  if (!pre) return !post || V_KIND.test(post) || /(점|박물관|미술관|공원|시장|해수욕장|사|성당|궁|temple|museum|park)$/i.test(post) || ratio >= 0.45 ? 0.95 : 0.7;
+  if (!post && pre.length <= 2 && /[가-힣]/.test(pre)) return 0.9;   // 강릉 + 중앙시장
+  if (pre.length <= 2 && V_KIND.test(post) && /[가-힣]/.test(pre)) return 0.9;
+  return ratio >= 0.8 ? 0.9 : 0.5;
+}
 function vSim(a, b){
   a = vNorm(a); b = vNorm(b); if (!a || !b) return 0; if (a === b) return 1;
-  if (Math.min(a.length, b.length) >= 2 && (a.indexOf(b) >= 0 || b.indexOf(a) >= 0)) return Math.min(a.length, b.length) / Math.max(a.length, b.length) >= 0.34 ? 0.95 : 0.5;
+  if (Math.min(a.length, b.length) >= 2 && (a.indexOf(b) >= 0 || b.indexOf(a) >= 0)) return vContain(a, b);
   var bg = function(s){ var o = {}; for (var i = 0; i < s.length - 1; i++) { var g = s.substr(i, 2); o[g] = (o[g] || 0) + 1; } return o; }, A = bg(a), B = bg(b), inter = 0, na = 0, nb = 0, k;
   for (k in A) { na += A[k]; if (B[k]) inter += Math.min(A[k], B[k]); } for (k in B) nb += B[k];
   return na + nb ? 2 * inter / (na + nb) : 0;
@@ -4358,8 +4581,9 @@ function mixType(ai, time){ var m = toMin(time); return ai === '바' && m >= 0 &
 function checkOne(it, ll, dom){
   var p = vParts(it), names = [it.q, p.loc, p.ko].filter(function(x, i, a){ return x && a.indexOf(x) === i; });
   var ck = (dom ? 'd|' : 'a|') + (ll ? ll[0].toFixed(1) + ',' + ll[1].toFixed(1) : '') + '|' + vKey(it);
-  var hitC = VCACHE[ck]; if (hitC && !(hitC.s === 'no' && !(Date.now() - (hitC.at || 0) < NO_TTL)) && !(hitC.s === 'ok' && hitC.cv !== 2)) return Promise.resolve(cleanV(hitC));
-  var R = 100, qs = names.slice(0, 2), best = null;
+  var hitC = VCACHE[ck]; if (hitC && !(hitC.s === 'no' && !(Date.now() - (hitC.at || 0) < NO_TTL)) && !(hitC.s === 'ok' && hitC.cv !== 4)) return Promise.resolve(cleanV(hitC));
+  // a same-named shop far outside the destination is not the place the plan means (강릉 → a 숲나들이 95 km away)
+  var R = dom ? 40 : 80, qs = names.slice(0, 2), best = null;
   function judge(res){
     res.items.forEach(function(c){
       var d = ll ? distKm(ll, [c.lat, c.lon]) : 0; if (ll && d > R) return;
@@ -4372,7 +4596,7 @@ function checkOne(it, ll, dom){
   function step(i){
     if (i >= qs.length || (best && best.sc >= 0.6)) {
       var ok = best && best.sc >= 0.6, v = ok ? { s: best.open ? 'ok' : 'closed', t: best.c.status === 'CLOSED_TEMPORARILY' ? 'temp' : '', n: best.c.name, lat: best.c.lat, lon: best.c.lon, u: best.c.u, src: best.src, gid: best.src === 'google' ? best.c.id : '' } : { s: 'no', src: best ? best.src : VC.src || 'osm' };
-      if (ok) { var ty = placeCat(best.c); if (ty === '맛집/바') { v.ty = '맛집'; v.tyb = 1; } else if (ty) v.ty = ty; v.cv = 2; }
+      if (ok) { var ty = placeCat(best.c); if (ty === '맛집/바') { v.ty = '맛집'; v.tyb = 1; } else if (ty) v.ty = ty; v.cv = 4; var sb = String(best.c.cat || '').split('>').pop().trim() || String(best.c.type || '').replace(/_/g, ' '); if (sb) v.sub = sb.slice(0, 30); }
       v = cleanV(Object.assign(v, { k: vKey(it) })); vCacheSet(ck, ok && !v.ty ? Object.assign({ tyx: 1 }, v) : v); return v;
     }
     return placeSearch(qs[i], ll, dom).then(function(res){ VC.src = res.src; judge(res); return step(i + 1); });
@@ -4386,7 +4610,7 @@ function wishKind(t, it){
   var want = wishCat(wp), food = /^(카페|바|맛집)$/; if (!/^(카페|바|맛집|쇼핑)$/.test(want) || it.v.ty === want || (food.test(want) && food.test(it.v.ty))) return false;
   it.wev = { full: false, text: wp.types[0].k + ' ✗(지도 분류: ' + it.v.ty + ')' }; return true;
 }
-function vTodo(t){ var out = []; t.days.forEach(function(d){ d.items.forEach(function(it){ if (!vWanted(it)) { if (it.v) delete it.v; return; } if (!it.v || it.v.k !== vKey(it) || (it.v.s === 'no' && Date.now() - (it.v.at || 0) > NO_TTL) || (it.v.s === 'ok' && it.v.cv !== 2 && (it.v.src === 'kakao' || it.v.src === 'google'))) out.push(it); }); }); return out; }
+function vTodo(t){ var out = []; t.days.forEach(function(d){ d.items.forEach(function(it){ if (!vWanted(it)) { if (it.v) delete it.v; return; } if (!it.v || it.v.k !== vKey(it) || (it.v.s === 'no' && Date.now() - (it.v.at || 0) > NO_TTL) || (it.v.s === 'ok' && it.v.cv !== 4 && (it.v.src === 'kakao' || it.v.src === 'google'))) out.push(it); }); }); return out; }
 function checkPlaces(t){
   if (!t || t.example || demoMode || VC.fail || (VC.run && VC.run.t === t)) return;
   if (!vTodo(t).length) return;
